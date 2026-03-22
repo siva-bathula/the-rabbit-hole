@@ -19,6 +19,7 @@ export default function App() {
     rootLabel,
     explore,
     expand,
+    collapse,
     reset,
   } = useGraph();
 
@@ -43,6 +44,24 @@ export default function App() {
       await expand(node);
     },
     [expand]
+  );
+
+  const handleCollapse = useCallback(
+    (node) => {
+      collapse(node);
+      setSelectedNode(null);
+    },
+    [collapse, setSelectedNode]
+  );
+
+  const handleRelatedExplore = useCallback(
+    async (topic) => {
+      setSelectedNode(null);
+      setCurrentTopic(topic);
+      await explore(topic);
+      setPhase('graph');
+    },
+    [explore, setSelectedNode]
   );
 
   const handleNewSearch = () => {
@@ -118,7 +137,10 @@ export default function App() {
               rootTopic={rootLabel}
               onClose={() => setSelectedNode(null)}
               onExpand={handleExpand}
+              onCollapse={handleCollapse}
+              onExplore={handleRelatedExplore}
               isExpanding={expandingNodeId === selectedNode.id}
+              isExpanded={expandedNodes.has(selectedNode.id)}
             />
           )}
 
@@ -129,9 +151,11 @@ export default function App() {
           >
             {[
               { color: '#F59E0B', label: 'Root topic' },
-              { color: '#3B82F6', label: 'Unexplored' },
               { color: '#22D3EE', label: 'Expanded' },
-              { color: '#A855F7', label: 'Selected' },
+              { color: '#A855F7', label: 'Selected / Theory' },
+              { color: '#22C55E', label: 'Application' },
+              { color: '#F97316', label: 'History' },
+              { color: '#3B82F6', label: 'Core / Other' },
             ].map(({ color, label }) => (
               <div key={label} className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: color }} />

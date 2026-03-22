@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import exploreRouter from './routes/explore.js';
@@ -12,6 +13,14 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 const IS_DEV = process.env.NODE_ENV !== 'production';
 
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests — please wait a minute before trying again.' },
+});
+
 // In dev the Vite dev server runs separately, so allow cross-origin.
 // In production, the React build is served from the same origin — no CORS needed.
 if (IS_DEV) {
@@ -19,6 +28,7 @@ if (IS_DEV) {
 }
 
 app.use(express.json());
+app.use('/api', apiLimiter);
 
 app.use('/api/explore', exploreRouter);
 app.use('/api/expand', expandRouter);

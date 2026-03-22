@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
-export default function NodeOverlay({ node, rootTopic, onClose, onExpand, isExpanding }) {
+export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onCollapse, onExplore, isExpanding, isExpanded }) {
   const [explanation, setExplanation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -226,7 +226,7 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, isExpa
                     </div>
                   )}
 
-                  {/* Related Concepts */}
+                  {/* Related Concepts — click to explore */}
                   {explanation.related?.length > 0 && (
                     <div>
                       <h3 className="text-xs font-semibold uppercase tracking-widest text-amber-400 mb-3">
@@ -234,14 +234,18 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, isExpa
                       </h3>
                       <div className="flex flex-wrap gap-2">
                         {explanation.related.map((rel, i) => (
-                          <span
+                          <button
                             key={i}
-                            className="px-3 py-1 rounded-full text-xs font-medium bg-amber-500/10 border border-amber-500/20 text-amber-300"
+                            onClick={() => onExplore(rel)}
+                            className="px-3 py-1 rounded-full text-xs font-medium transition-colors
+                              bg-amber-500/10 border border-amber-500/20 text-amber-300
+                              hover:bg-amber-500/25 hover:border-amber-500/40 hover:text-amber-200"
                           >
                             {rel}
-                          </span>
+                          </button>
                         ))}
                       </div>
+                      <p className="text-white/25 text-xs mt-2">Tap any concept to explore it</p>
                     </div>
                   )}
                 </div>
@@ -250,28 +254,42 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, isExpa
 
             {/* Footer actions */}
             <div className="px-6 py-4 border-t border-white/10 flex gap-3 flex-shrink-0">
-              <button
-                onClick={handleExpand}
-                disabled={isExpanding}
-                className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-semibold text-sm transition-all
-                  bg-purple-600 hover:bg-purple-500 active:scale-95 text-white
-                  disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
-              >
-                {isExpanding ? (
-                  <>
-                    <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                    Diving deeper…
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                        d="M19 9l-7 7-7-7" />
-                    </svg>
-                    Go Deeper
-                  </>
-                )}
-              </button>
+              {isExpanded ? (
+                <button
+                  onClick={() => onCollapse(node)}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-semibold text-sm transition-all
+                    bg-white/10 hover:bg-white/15 active:scale-95 text-white/70 hover:text-white border border-white/10"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M5 15l7-7 7 7" />
+                  </svg>
+                  Collapse
+                </button>
+              ) : (
+                <button
+                  onClick={handleExpand}
+                  disabled={isExpanding}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-semibold text-sm transition-all
+                    bg-purple-600 hover:bg-purple-500 active:scale-95 text-white
+                    disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
+                >
+                  {isExpanding ? (
+                    <>
+                      <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                      Diving deeper…
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                          d="M19 9l-7 7-7-7" />
+                      </svg>
+                      Go Deeper
+                    </>
+                  )}
+                </button>
+              )}
               <button
                 onClick={onClose}
                 className="px-4 py-2.5 rounded-xl text-sm font-medium text-white/50 hover:text-white hover:bg-white/10 transition-colors"
