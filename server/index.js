@@ -33,6 +33,6 @@ if (!IS_DEV) {
   app.get('*', (_, res) => res.sendFile(path.join(staticPath, 'index.html')));
 }
 
-app.listen(PORT, () => {
-  console.log(`Rabbit Hole server running on http://localhost:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Rabbit Hole server running on http://0.0.0.0:${PORT}`);
 });
