@@ -254,7 +254,7 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
 
             {/* Footer actions */}
             <div className="px-6 py-4 border-t border-white/10 flex gap-3 flex-shrink-0">
-              {isExpanded ? (
+              {node.id !== 'root' && (isExpanded ? (
                 <button
                   onClick={() => onCollapse(node)}
                   className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-semibold text-sm transition-all
@@ -289,7 +289,7 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
                     </>
                   )}
                 </button>
-              )}
+              ))}
               <button
                 onClick={onClose}
                 className="px-4 py-2.5 rounded-xl text-sm font-medium text-white/50 hover:text-white hover:bg-white/10 transition-colors"
