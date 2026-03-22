@@ -1,8 +1,13 @@
 **/node_modules
 server/public
-.env
+# Server .env has secrets — never include in Docker build
 server/.env
+# Root-level .env if one exists
+.env
 .git
 .gitignore
 *.md
 client/dist
+# client/.env is intentionally NOT excluded here.
+# Firebase client config is public-by-design (see firebase.google.com/docs/projects/api-keys)
+# and needs to be present for Vite to inline values at build time.
