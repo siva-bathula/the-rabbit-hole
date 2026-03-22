@@ -2,7 +2,6 @@
 **/node_modules
 
 # Environment variables — never commit these
-.env
 server/.env
 # client/.env is intentionally committed — Firebase client config is public by design
 # See: https://firebase.google.com/docs/projects/api-keys
