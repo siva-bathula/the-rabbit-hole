@@ -9,5 +9,28 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script type="module">
+      // Import the functions you need from the SDKs you need
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-app.js";
+      import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.11.0/firebase-analytics.js";
+      // TODO: Add SDKs for Firebase products that you want to use
+      // https://firebase.google.com/docs/web/setup#available-libraries
+
+      // Your web app's Firebase configuration
+      // For Firebase JS SDK v7.20.0 and later, measurementId is optional
+      const firebaseConfig = {
+        apiKey: "AIzaSyC_HBDWrUE1LhAsjUDdBRWJ8-DpmpwNoHE",
+        authDomain: "therabbithole-491011.firebaseapp.com",
+        projectId: "therabbithole-491011",
+        storageBucket: "therabbithole-491011.firebasestorage.app",
+        messagingSenderId: "822206442437",
+        appId: "1:822206442437:web:788af4378a2d06f934f9ac",
+        measurementId: "G-43HJ7544XE"
+      };
+
+      // Initialize Firebase
+      const app = initializeApp(firebaseConfig);
+      const analytics = getAnalytics(app);
+    </script>
   </body>
 </html>
