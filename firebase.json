@@ -1,0 +1,17 @@
+{
+  "hosting": {
+    "public": "public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [{
+      "source": "**",
+      "run": {
+        "serviceId": "the-rabbit-hole",
+        "region": "asia-south2" 
+      }
+    }]
+  }
+}
