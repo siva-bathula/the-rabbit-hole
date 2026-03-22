@@ -1,0 +1,222 @@
+import { useRef, useEffect, useCallback, useState } from 'react';
+import ForceGraph2D from 'react-force-graph-2d';
+
+const NODE_COLORS = {
+  root: '#F59E0B',
+  selected: '#A855F7',
+  expanded: '#22D3EE',
+  default: '#3B82F6',
+};
+
+const NODE_RADIUS = {
+  root: 10,
+  default: 6,
+};
+
+function getNodeRadius(node) {
+  return node.id === 'root' ? NODE_RADIUS.root : NODE_RADIUS.default;
+}
+
+function getNodeColor(node, selectedNode, expandedNodes) {
+  if (selectedNode?.id === node.id) return NODE_COLORS.selected;
+  if (node.id === 'root') return NODE_COLORS.root;
+  if (expandedNodes.has(node.id)) return NODE_COLORS.expanded;
+  return NODE_COLORS.default;
+}
+
+export default function Graph({
+  graphData,
+  selectedNode,
+  expandedNodes,
+  expandingNodeId,
+  onNodeClick,
+}) {
+  const fgRef = useRef(null);
+  // Tracks whether root children have already been pinned for the current graph
+  const seededRef = useRef(false);
+  const [dimensions, setDimensions] = useState({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setDimensions({ width: window.innerWidth, height: window.innerHeight });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Pin root and root children at exact positions whenever graph data changes.
+  // All other nodes (expanded subtopics and their children) are already pinned
+  // with fx/fy by useGraph.js before they reach this component.
+  useEffect(() => {
+    // Reset seed flag when graph is cleared so next search pins correctly
+    if (graphData.nodes.length === 0) {
+      seededRef.current = false;
+      return;
+    }
+
+    // Pin root at canvas origin
+    const rootNode = graphData.nodes.find((n) => n.id === 'root');
+    if (rootNode) {
+      rootNode.fx = 0;
+      rootNode.fy = 0;
+      rootNode.x = 0;
+      rootNode.y = 0;
+    }
+
+    // Pin root children on an evenly-spaced ring — first load only.
+    // On expansions the root children are already pinned, so skip.
+    if (!seededRef.current) {
+      const rootChildIds = new Set();
+      graphData.links.forEach((l) => {
+        const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+        if (srcId === 'root') rootChildIds.add(tgtId);
+        if (tgtId === 'root') rootChildIds.add(srcId);
+      });
+
+      const rootChildren = graphData.nodes.filter((n) => rootChildIds.has(n.id));
+      const RING_R = 190;
+      rootChildren.forEach((node, i) => {
+        const angle = (i / rootChildren.length) * 2 * Math.PI - Math.PI / 2;
+        const px = RING_R * Math.cos(angle);
+        const py = RING_R * Math.sin(angle);
+        node.fx = px;
+        node.fy = py;
+        node.x = px;
+        node.y = py;
+        node.vx = 0;
+        node.vy = 0;
+      });
+
+      seededRef.current = true;
+    }
+  }, [graphData.nodes.length]);
+
+  // Center on root node when graph first populates
+  const hasNodes = graphData.nodes.length > 0;
+  useEffect(() => {
+    if (hasNodes && fgRef.current) {
+      const timer = setTimeout(() => {
+        fgRef.current?.zoomToFit(600, 80);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [hasNodes]);
+
+  const drawNode = useCallback(
+    (node, ctx, globalScale) => {
+      // Skip drawing until the force simulation has assigned finite coordinates
+      if (!isFinite(node.x) || !isFinite(node.y)) return;
+
+      const r = getNodeRadius(node);
+      const color = getNodeColor(node, selectedNode, expandedNodes);
+      const isExpanding = node.id === expandingNodeId;
+      const isSelected = selectedNode?.id === node.id;
+
+      // Outer glow for expanded or selected nodes
+      if (expandedNodes.has(node.id) || isSelected || node.id === 'root') {
+        const glowRadius = r * 2.4;
+        const gradient = ctx.createRadialGradient(
+          node.x, node.y, r * 0.5,
+          node.x, node.y, glowRadius
+        );
+        const glowColor = isSelected
+          ? 'rgba(168,85,247,'
+          : node.id === 'root'
+          ? 'rgba(245,158,11,'
+          : 'rgba(34,211,238,';
+        gradient.addColorStop(0, `${glowColor}0.25)`);
+        gradient.addColorStop(1, `${glowColor}0)`);
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, glowRadius, 0, 2 * Math.PI);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      }
+
+      // Spinning ring for nodes currently being expanded
+      if (isExpanding) {
+        const time = Date.now() / 500;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, r + 6, time, time + Math.PI * 1.5);
+        ctx.strokeStyle = '#F59E0B';
+        ctx.lineWidth = 2.5 / globalScale;
+        ctx.stroke();
+      }
+
+      // Main circle body
+      ctx.beginPath();
+      ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
+      ctx.fillStyle = color;
+      ctx.fill();
+
+      // Border ring
+      ctx.strokeStyle = isSelected
+        ? 'rgba(216,180,254,0.8)'
+        : 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = (isSelected ? 2.5 : 1.5) / globalScale;
+      ctx.stroke();
+
+      // Unexpanded leaf indicator: small "+" mark
+      const isLeaf = !expandedNodes.has(node.id) && node.id !== 'root';
+      if (isLeaf) {
+        const plusSize = r * 0.45;
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+        ctx.lineWidth = 1.2 / globalScale;
+        ctx.beginPath();
+        ctx.moveTo(node.x - plusSize, node.y);
+        ctx.lineTo(node.x + plusSize, node.y);
+        ctx.moveTo(node.x, node.y - plusSize);
+        ctx.lineTo(node.x, node.y + plusSize);
+        ctx.stroke();
+      }
+
+      // Label below node
+      const fontSize = Math.max(13 / globalScale, 3);
+      ctx.font = `500 ${fontSize}px Inter, system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = isSelected
+        ? 'rgba(233,213,255,1)'
+        : 'rgba(255,255,255,0.85)';
+      ctx.fillText(node.label, node.x, node.y + r + 4 / globalScale);
+    },
+    [selectedNode, expandedNodes, expandingNodeId]
+  );
+
+  const paintPointerArea = useCallback((node, color, ctx) => {
+    if (!isFinite(node.x) || !isFinite(node.y)) return;
+    const r = getNodeRadius(node) + 4;
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }, []);
+
+  return (
+    <ForceGraph2D
+      ref={fgRef}
+      graphData={graphData}
+      width={dimensions.width}
+      height={dimensions.height}
+      backgroundColor="#07070f"
+      nodeCanvasObject={drawNode}
+      nodeCanvasObjectMode={() => 'replace'}
+      nodePointerAreaPaint={paintPointerArea}
+      onNodeClick={onNodeClick}
+      linkColor={() => 'rgba(148,163,184,0.55)'}
+      linkWidth={1.8}
+      linkDirectionalParticles={2}
+      linkDirectionalParticleWidth={2}
+      linkDirectionalParticleColor={() => 'rgba(148,163,184,0.85)'}
+      warmupTicks={0}
+      cooldownTicks={0}
+      enableNodeDrag={true}
+      enableZoomInteraction={true}
+      minZoom={0.3}
+      maxZoom={6}
+    />
+  );
+}
