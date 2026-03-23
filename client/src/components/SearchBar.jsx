@@ -13,7 +13,7 @@ const SUGGESTIONS = [
   'The Renaissance',
 ];
 
-export default function SearchBar({ onSearch, isLoading }) {
+export default function SearchBar({ onSearch, isLoading, mode, onModeChange }) {
   const [topic, setTopic] = useState('');
   const [placeholder, setPlaceholder] = useState('');
   const [suggestionIndex, setSuggestionIndex] = useState(0);
@@ -181,11 +181,46 @@ export default function SearchBar({ onSearch, isLoading }) {
             ))}
           </div>
         )}
+
+        {/* Mode toggle */}
+        {!isLoading && (
+          <div className="mt-8 flex flex-col items-center gap-2">
+            <button
+              onClick={() => onModeChange(mode === 'fast' ? 'slow' : 'fast')}
+              className={`flex items-center gap-3 px-5 py-2.5 rounded-2xl text-sm font-medium transition-all border
+                ${mode === 'slow'
+                  ? 'bg-purple-600/20 border-purple-500/40 text-purple-300'
+                  : 'bg-white/4 border-white/8 text-white/40 hover:text-white/60 hover:bg-white/8'
+                }`}
+            >
+              {/* Toggle pill */}
+              <span
+                className={`relative inline-flex w-9 h-5 rounded-full transition-colors flex-shrink-0 ${
+                  mode === 'slow' ? 'bg-purple-500' : 'bg-white/15'
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                    mode === 'slow' ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+                />
+              </span>
+              <span>Slow Burn mode</span>
+            </button>
+            <p className="text-white/20 text-xs">
+              {mode === 'slow'
+                ? 'One concept at a time, guided reading'
+                : 'Full graph — explore freely'}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Bottom hint */}
       <p className="absolute bottom-6 text-white/15 text-xs">
-        Click any node to explore · "Go Deeper" to expand · Scroll to zoom
+        {mode === 'slow'
+          ? 'Guided reading · one concept at a time · go as deep as you want'
+          : 'Click any node to explore · "Go Deeper" to expand · Scroll to zoom'}
       </p>
     </div>
   );
