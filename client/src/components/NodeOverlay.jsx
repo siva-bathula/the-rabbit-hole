@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
-export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onCollapse, onExplore, isExpanding, isExpanded }) {
+export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onCollapse, onExplore, isExpanding, isExpanded, explanationCache }) {
   const [explanation, setExplanation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -16,6 +16,15 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
   useEffect(() => {
     if (!node) return;
 
+    // Serve from cache if available
+    const cached = explanationCache?.current?.get(node.id);
+    if (cached) {
+      setExplanation(cached);
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
+
     let cancelled = false;
     setExplanation(null);
     setError(null);
@@ -24,13 +33,20 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
     fetch('/api/explain', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nodeLabel: node.label, parentContext: rootTopic || node.label }),
+      body: JSON.stringify({
+        nodeLabel: node.label,
+        parentContext: rootTopic || node.label,
+        rootTopic: rootTopic || '',
+      }),
     })
       .then((r) => r.json())
       .then((data) => {
         if (!cancelled) {
           if (data.error) setError(data.error);
-          else setExplanation(data);
+          else {
+            setExplanation(data);
+            explanationCache?.current?.set(node.id, data);
+          }
         }
       })
       .catch(() => {

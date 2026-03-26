@@ -13,7 +13,7 @@ const SUGGESTIONS = [
   'The Renaissance',
 ];
 
-export default function SearchBar({ onSearch, isLoading, mode, onModeChange }) {
+export default function SearchBar({ onSearch, isLoading, mode, onModeChange, recentTopics }) {
   const [topic, setTopic] = useState('');
   const [placeholder, setPlaceholder] = useState('');
   const [suggestionIndex, setSuggestionIndex] = useState(0);
@@ -164,9 +164,33 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange }) {
           </p>
         )}
 
+        {/* Recent searches */}
+        {!isLoading && recentTopics?.length > 0 && (
+          <div className="mt-5">
+            <p className="text-white/20 text-xs mb-2 text-center uppercase tracking-widest">Recent</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {recentTopics.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => handleSuggestionClick(t)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium
+                    bg-white/5 border border-white/10 text-white/45
+                    hover:bg-purple-500/15 hover:border-purple-500/30 hover:text-white/80
+                    transition-all"
+                >
+                  <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Quick suggestions */}
         {!isLoading && (
-          <div className="mt-6 flex flex-wrap justify-center gap-2">
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
             {SUGGESTIONS.slice(0, 6).map((s) => (
               <button
                 key={s}

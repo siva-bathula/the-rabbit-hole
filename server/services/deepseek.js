@@ -93,14 +93,30 @@ const CODE_KEYWORDS = [
   'sample', 'demo', 'program', 'script', 'function', 'method',
 ];
 
+// Root topic keywords that indicate the whole graph is code/programming-related.
+// When matched, ALL nodes get code examples regardless of their own label.
+const CODE_ROOT_KEYWORDS = [
+  'javascript', 'python', 'java', 'typescript', 'golang', 'rust', 'c++', 'c#',
+  'ruby', 'php', 'swift', 'kotlin', 'scala', 'dsa', 'data structure', 'algorithm',
+  'leetcode', 'programming', 'coding', 'react', 'angular', 'vue', 'node.js',
+  'express', 'django', 'flask', 'sql', 'nosql', 'sorting', 'binary tree',
+  'linked list', 'recursion', 'dynamic programming', 'big-o', 'backend', 'frontend',
+  'web development', 'api design', 'design pattern',
+];
+
 function isCodeNode(label) {
   const lower = label.toLowerCase();
   return CODE_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
-export async function explainNode(nodeLabel, parentContext) {
+function isCodeRootTopic(rootTopic) {
+  const lower = (rootTopic || '').toLowerCase();
+  return CODE_ROOT_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+export async function explainNode(nodeLabel, parentContext, rootTopic = '') {
   const isRoot = !parentContext || parentContext === nodeLabel;
-  const needsCode = isCodeNode(nodeLabel);
+  const needsCode = isCodeNode(nodeLabel) || isCodeRootTopic(rootTopic);
 
   const codeField = needsCode
     ? `- "code": a working, well-commented code example string demonstrating "${nodeLabel}" (use the language implied by the context, default to JavaScript). Include only the code — no markdown fences.`

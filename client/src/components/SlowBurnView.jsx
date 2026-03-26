@@ -2,13 +2,23 @@ import { useState, useEffect, useCallback } from 'react';
 import FolderTree from './FolderTree.jsx';
 import { useSlowBurn } from '../hooks/useSlowBurn.js';
 
-function useNodeExplanation(node, parentContext) {
+function useNodeExplanation(node, parentContext, rootLabel, cache) {
   const [explanation, setExplanation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!node) return;
+
+    // Serve from cache if available
+    const cached = cache?.current?.get(node.id);
+    if (cached) {
+      setExplanation(cached);
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
+
     let cancelled = false;
     setExplanation(null);
     setError(null);
@@ -20,13 +30,17 @@ function useNodeExplanation(node, parentContext) {
       body: JSON.stringify({
         nodeLabel: node.label,
         parentContext: parentContext || node.label,
+        rootTopic: rootLabel || '',
       }),
     })
       .then((r) => r.json())
       .then((data) => {
         if (!cancelled) {
           if (data.error) setError(data.error);
-          else setExplanation(data);
+          else {
+            setExplanation(data);
+            cache?.current?.set(node.id, data);
+          }
         }
       })
       .catch(() => {
@@ -44,8 +58,8 @@ function useNodeExplanation(node, parentContext) {
   return { explanation, isLoading, error };
 }
 
-function ContentArea({ node, parentContext, onExplore }) {
-  const { explanation, isLoading, error } = useNodeExplanation(node, parentContext);
+function ContentArea({ node, parentContext, rootLabel, cache, onExplore }) {
+  const { explanation, isLoading, error } = useNodeExplanation(node, parentContext, rootLabel, cache);
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback((code) => {
@@ -212,7 +226,10 @@ export default function SlowBurnView({
   rootLabel,
   isExploring,
   onExplore,
+  explanationCache,
 }) {
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 640);
+
   const {
     currentNode,
     parentNode,
@@ -254,8 +271,11 @@ export default function SlowBurnView({
     <div className="flex w-full h-full overflow-hidden">
       {/* Left sidebar — folder tree */}
       <div
-        className="flex-shrink-0 overflow-hidden"
-        style={{ width: '260px', borderRight: '1px solid rgba(255,255,255,0.07)' }}
+        className="flex-shrink-0 overflow-hidden transition-all duration-300"
+        style={{
+          width: sidebarOpen ? '260px' : '0px',
+          borderRight: sidebarOpen ? '1px solid rgba(255,255,255,0.07)' : 'none',
+        }}
       >
         <FolderTree
           graphData={graphData}
@@ -267,13 +287,25 @@ export default function SlowBurnView({
       </div>
 
       {/* Right — content + footer nav */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <div className="relative flex-1 flex flex-col min-w-0 min-h-0">
+        {/* Sidebar toggle button */}
+        <button
+          onClick={() => setSidebarOpen((v) => !v)}
+          className="absolute left-0 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center
+            w-5 h-10 rounded-r-lg text-white/40 hover:text-white transition-all"
+          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)' }}
+          title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+        >
+          <span className="text-xs font-bold leading-none">{sidebarOpen ? '«' : '»'}</span>
+        </button>
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto">
           {currentNode ? (
             <ContentArea
               node={currentNode}
               parentContext={parentContext}
+              rootLabel={rootLabel}
+              cache={explanationCache}
               onExplore={onExplore}
             />
           ) : (
@@ -293,10 +325,18 @@ export default function SlowBurnView({
         >
           {/* Left: progress + back */}
           <div className="flex items-center gap-4">
-            {progress && (
-              <span className="text-xs text-white/25 font-mono tabular-nums min-w-[3rem]">
-                {progress}
-              </span>
+            {slowQueue.length > 0 && (
+              <div className="flex items-center gap-2">
+                <div className="w-16 h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                  <div
+                    className="h-full rounded-full bg-purple-500 transition-all duration-300"
+                    style={{ width: `${((slowIndex + 1) / slowQueue.length) * 100}%` }}
+                  />
+                </div>
+                <span className="text-xs text-white/25 font-mono tabular-nums">
+                  {slowIndex + 1}/{slowQueue.length}
+                </span>
+              </div>
             )}
             {canGoBack && (
               <button

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import SearchBar from './components/SearchBar.jsx';
 import Graph from './components/Graph.jsx';
 import NodeOverlay from './components/NodeOverlay.jsx';
@@ -9,6 +9,23 @@ export default function App() {
   const [phase, setPhase] = useState('search'); // 'search' | 'graph'
   const [currentTopic, setCurrentTopic] = useState('');
   const [mode, setMode] = useState('fast'); // 'fast' | 'slow'
+
+  // Search history — persisted to localStorage
+  const [searchHistory, setSearchHistory] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('rabbit-hole-history') || '[]');
+    } catch {
+      return [];
+    }
+  });
+
+  const saveToHistory = useCallback((topic) => {
+    setSearchHistory((prev) => {
+      const next = [topic, ...prev.filter((t) => t !== topic)].slice(0, 5);
+      localStorage.setItem('rabbit-hole-history', JSON.stringify(next));
+      return next;
+    });
+  }, []);
 
   const {
     graphData,
@@ -23,15 +40,17 @@ export default function App() {
     expand,
     collapse,
     reset,
+    explanationCache,
   } = useGraph();
 
   const handleSearch = useCallback(
     async (topic) => {
+      saveToHistory(topic);
       setCurrentTopic(topic);
       await explore(topic);
       setPhase('graph');
     },
-    [explore]
+    [explore, saveToHistory]
   );
 
   const handleNodeClick = useCallback(
@@ -58,19 +77,18 @@ export default function App() {
 
   const handleRelatedExplore = useCallback(
     async (topic) => {
+      saveToHistory(topic);
       setSelectedNode(null);
       setCurrentTopic(topic);
       await explore(topic);
       setPhase('graph');
     },
-    [explore, setSelectedNode]
+    [explore, setSelectedNode, saveToHistory]
   );
 
-  const handleModeToggle = useCallback(async () => {
-    const newMode = mode === 'fast' ? 'slow' : 'fast';
-    setMode(newMode);
-    await explore(currentTopic);
-  }, [mode, currentTopic, explore]);
+  const handleModeToggle = useCallback(() => {
+    setMode((m) => (m === 'fast' ? 'slow' : 'fast'));
+  }, []);
 
   const handleNewSearch = () => {
     reset();
@@ -87,6 +105,7 @@ export default function App() {
           isLoading={isExploring}
           mode={mode}
           onModeChange={setMode}
+          recentTopics={searchHistory}
         />
       )}
 
@@ -113,6 +132,7 @@ export default function App() {
                   onExplore={handleRelatedExplore}
                   isExpanding={expandingNodeId === selectedNode.id}
                   isExpanded={expandedNodes.has(selectedNode.id)}
+                  explanationCache={explanationCache}
                 />
               )}
 
@@ -152,6 +172,7 @@ export default function App() {
                 rootLabel={rootLabel}
                 isExploring={isExploring}
                 onExplore={handleRelatedExplore}
+                explanationCache={explanationCache}
               />
             </div>
           )}

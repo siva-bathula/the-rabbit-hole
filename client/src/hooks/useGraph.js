@@ -37,6 +37,8 @@ export function useGraph() {
   const parentLabelOfRef = useRef(new Map());
   // nodeId → {x, y} before it was pushed outward (for restoring on collapse)
   const originalPositionRef = useRef(new Map());
+  // nodeId → fetched explanation object (avoids redundant API calls)
+  const explanationCacheRef = useRef(new Map());
 
   const explore = useCallback(async (topic) => {
     setIsExploring(true);
@@ -50,6 +52,7 @@ export function useGraph() {
     rootLabelRef.current = '';
     parentLabelOfRef.current = new Map();
     originalPositionRef.current = new Map();
+    explanationCacheRef.current = new Map();
 
     try {
       const res = await fetch('/api/explore', {
@@ -226,6 +229,7 @@ export function useGraph() {
     rootLabelRef.current = '';
     parentLabelOfRef.current = new Map();
     originalPositionRef.current = new Map();
+    explanationCacheRef.current = new Map();
   }, []);
 
   return {
@@ -241,5 +245,6 @@ export function useGraph() {
     expand,
     collapse,
     reset,
+    explanationCache: explanationCacheRef,
   };
 }
