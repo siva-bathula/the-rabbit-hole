@@ -426,7 +426,7 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
                   {isExpanding ? (
                     <>
                       <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                      Diving deeper…
+                      Branching out…
                     </>
                   ) : (
                     <>
@@ -434,7 +434,7 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                           d="M19 9l-7 7-7-7" />
                       </svg>
-                      Go Deeper
+                      Branch Out
                     </>
                   )}
                 </button>
