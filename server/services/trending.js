@@ -69,8 +69,12 @@ async function distilTopics(headlines) {
 You will receive a list of recent news headlines. From them, pick or distil exactly 4 concise topic labels (1-4 words each) that would make great knowledge graph explorations.
 
 Rules:
-- Prefer topics with depth — geopolitics, economics, science, culture, history — over pure breaking news
-- Labels must be neutral and search-friendly (e.g. "India-Pakistan Tensions", "Operation Sindoor", "India's Defence Budget", "The Indus Waters Treaty")
+- Topics must celebrate or inform about India — its achievements, culture, economy, science, history, sports, technology, space, arts, and people
+- Prefer uplifting, educational, or aspirational topics over conflict or controversy
+- STRICTLY AVOID any topic that is anti-Indian, politically divisive, religiously sensitive, or paints India in a negative light
+- STRICTLY AVOID geopolitical conflicts, border disputes, war, terrorism, communal tensions, or any topic that could be seen as controversial within India
+- Prefer topics like Indian space missions, economic growth, sporting achievements, cultural heritage, scientific breakthroughs, infrastructure milestones
+- Labels must be short, positive, and search-friendly (e.g. "India's Space Programme", "Indian Classical Music", "India's Green Energy Push", "Startup India")
 - Avoid full sentences — keep it to a short noun phrase
 - Return ONLY a JSON object: { "topics": ["...", "...", "...", "..."] }`,
       },
