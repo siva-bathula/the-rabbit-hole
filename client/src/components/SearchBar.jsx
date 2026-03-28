@@ -106,7 +106,7 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, rec
 
   return (
     <div
-      className="min-h-screen flex flex-col items-center justify-center px-4 relative overflow-hidden"
+      className="min-h-screen flex flex-col items-center px-4 relative overflow-y-auto"
       style={{ background: '#07070f' }}
     >
       {/* Background radial glow */}
@@ -127,7 +127,7 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, rec
         }}
       />
 
-      <div className="relative z-10 w-full max-w-xl text-center">
+      <div className="relative z-10 w-full max-w-xl text-center my-auto py-16">
         {isLoading ? (
           /* ── Loading state ── */
           <div className="flex flex-col items-center gap-6 py-8">

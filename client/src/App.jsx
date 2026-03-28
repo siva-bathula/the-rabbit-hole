@@ -279,7 +279,7 @@ export default function App() {
   };
 
   return (
-    <div className="w-full h-full relative">
+    <div className={`w-full relative ${phase === 'graph' ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
       {phase === 'search' && (
         <SearchBar
           onSearch={handleSearch}
