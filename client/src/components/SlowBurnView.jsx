@@ -6,14 +6,22 @@ function useNodeExplanation(node, parentContext, rootLabel, cache) {
   const [explanation, setExplanation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [deeperContent, setDeeperContent] = useState(null);
+  const [isPulling, setIsPulling] = useState(false);
+  const [deeperError, setDeeperError] = useState(null);
 
   useEffect(() => {
     if (!node) return;
 
+    setDeeperContent(null);
+    setDeeperError(null);
+    setIsPulling(false);
+
     // Serve from cache if available
     const cached = cache?.current?.get(node.id);
     if (cached) {
-      setExplanation(cached);
+      setExplanation(cached.explanation ?? cached);
+      setDeeperContent(cached.deeper ?? null);
       setError(null);
       setIsLoading(false);
       return;
@@ -39,7 +47,7 @@ function useNodeExplanation(node, parentContext, rootLabel, cache) {
           if (data.error) setError(data.error);
           else {
             setExplanation(data);
-            cache?.current?.set(node.id, data);
+            cache?.current?.set(node.id, { explanation: data, deeper: null });
           }
         }
       })
@@ -55,12 +63,45 @@ function useNodeExplanation(node, parentContext, rootLabel, cache) {
     };
   }, [node?.id, parentContext]);
 
-  return { explanation, isLoading, error };
+  const handlePullThread = useCallback(async () => {
+    if (!explanation || isPulling) return;
+    setIsPulling(true);
+    setDeeperError(null);
+    try {
+      const res = await fetch('/api/deepen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nodeLabel: node.label,
+          parentContext: parentContext || node.label,
+          rootTopic: rootLabel || '',
+          existingSummary: explanation.summary || '',
+        }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setDeeperError(data.error);
+      } else {
+        setDeeperContent(data);
+        if (cache?.current?.has(node.id)) {
+          const entry = cache.current.get(node.id);
+          cache.current.set(node.id, { ...entry, deeper: data });
+        }
+      }
+    } catch {
+      setDeeperError('Failed to pull deeper content.');
+    } finally {
+      setIsPulling(false);
+    }
+  }, [explanation, isPulling, node, parentContext, rootLabel, cache]);
+
+  return { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread };
 }
 
 function ContentArea({ node, parentContext, rootLabel, cache, onExplore }) {
-  const { explanation, isLoading, error } = useNodeExplanation(node, parentContext, rootLabel, cache);
+  const { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread } = useNodeExplanation(node, parentContext, rootLabel, cache);
   const [copied, setCopied] = useState(false);
+  const [copiedDeeper, setCopiedDeeper] = useState(false);
 
   const handleCopy = useCallback((code) => {
     navigator.clipboard.writeText(code).then(() => {
@@ -210,6 +251,96 @@ function ContentArea({ node, parentContext, rootLabel, cache, onExplore }) {
                 ))}
               </div>
               <p className="text-white/25 text-xs mt-2">Tap any concept to explore it</p>
+            </div>
+          )}
+
+          {/* Pull the Thread — deeper content */}
+          {!deeperContent && (
+            <div className="pt-2">
+              <button
+                onClick={handlePullThread}
+                disabled={isPulling}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl
+                  text-sm font-medium transition-all border
+                  bg-white/3 border-white/8 text-white/40
+                  hover:bg-purple-500/10 hover:border-purple-500/25 hover:text-white/70
+                  disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isPulling ? (
+                  <>
+                    <div className="w-3.5 h-3.5 rounded-full border-2 border-white/20 border-t-purple-400 animate-spin" />
+                    Unravelling…
+                  </>
+                ) : (
+                  <>
+                    <span>🧵</span>
+                    Pull the Thread
+                  </>
+                )}
+              </button>
+              {deeperError && (
+                <p className="text-red-400/70 text-xs mt-2 text-center">{deeperError}</p>
+              )}
+            </div>
+          )}
+
+          {/* Deeper content sections */}
+          {deeperContent && (
+            <div className="space-y-5 pt-4 border-t border-white/8">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">🧵</span>
+                <h3 className="text-xs font-semibold uppercase tracking-widest text-purple-400">
+                  Going Deeper
+                </h3>
+              </div>
+
+              {deeperContent.analogy && (
+                <div
+                  className="px-4 py-3 rounded-xl text-sm text-white/75 leading-relaxed italic"
+                  style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.15)' }}
+                >
+                  {deeperContent.analogy}
+                </div>
+              )}
+
+              {deeperContent.advancedInsights?.length > 0 && (
+                <ul className="space-y-3">
+                  {deeperContent.advancedInsights.map((insight, i) => (
+                    <li key={i} className="flex gap-3">
+                      <span className="mt-1.5 flex-shrink-0 w-1.5 h-1.5 rounded-full bg-purple-400" />
+                      <span className="text-white/70 text-sm leading-relaxed">{insight}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {deeperContent.code && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-widest text-green-400">
+                      Advanced Example
+                    </h3>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(deeperContent.code).then(() => {
+                          setCopiedDeeper(true);
+                          setTimeout(() => setCopiedDeeper(false), 2000);
+                        });
+                      }}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors
+                        text-white/40 hover:text-white hover:bg-white/10"
+                    >
+                      {copiedDeeper ? <span className="text-green-400">Copied</span> : 'Copy'}
+                    </button>
+                  </div>
+                  <pre
+                    className="rounded-xl p-4 overflow-x-auto text-sm leading-relaxed text-green-300 font-mono"
+                    style={{ background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(74,222,128,0.15)' }}
+                  >
+                    <code>{deeperContent.code}</code>
+                  </pre>
+                </div>
+              )}
             </div>
           )}
         </div>

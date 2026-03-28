@@ -39,6 +39,8 @@ export function useGraph() {
   const originalPositionRef = useRef(new Map());
   // nodeId → fetched explanation object (avoids redundant API calls)
   const explanationCacheRef = useRef(new Map());
+  // nodeId → raw API response from /api/expand (avoids re-fetching on collapse+re-expand)
+  const expandDataCacheRef = useRef(new Map());
 
   const explore = useCallback(async (topic) => {
     setIsExploring(true);
@@ -53,6 +55,7 @@ export function useGraph() {
     parentLabelOfRef.current = new Map();
     originalPositionRef.current = new Map();
     explanationCacheRef.current = new Map();
+    expandDataCacheRef.current = new Map();
 
     try {
       const res = await fetch('/api/explore', {
@@ -100,23 +103,27 @@ export function useGraph() {
       setError(null);
 
       try {
-        const existingLabels = nodesRef.current.map((n) => n.label);
-
         // Use the node's actual parent label for context, not always root
         const nodeParentLabel = parentLabelOfRef.current.get(node.id) || rootLabelRef.current || node.label;
 
-        const res = await fetch('/api/expand', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            nodeId: node.id,
-            nodeLabel: node.label,
-            parentContext: nodeParentLabel,
-            existingLabels,
-          }),
-        });
-        if (!res.ok) throw new Error((await res.json()).error || 'Server error');
-        const data = await res.json();
+        // Check cache first — avoids re-fetching after a collapse
+        let data = expandDataCacheRef.current.get(node.id);
+        if (!data) {
+          const existingLabels = nodesRef.current.map((n) => n.label);
+          const res = await fetch('/api/expand', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              nodeId: node.id,
+              nodeLabel: node.label,
+              parentContext: nodeParentLabel,
+              existingLabels,
+            }),
+          });
+          if (!res.ok) throw new Error((await res.json()).error || 'Server error');
+          data = await res.json();
+          expandDataCacheRef.current.set(node.id, data);
+        }
 
         // Compute radial direction from root to this node
         const rootNode = nodesRef.current.find((n) => n.id === 'root');
@@ -230,6 +237,7 @@ export function useGraph() {
     parentLabelOfRef.current = new Map();
     originalPositionRef.current = new Map();
     explanationCacheRef.current = new Map();
+    expandDataCacheRef.current = new Map();
   }, []);
 
   return {

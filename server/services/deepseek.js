@@ -176,3 +176,48 @@ Be precise and specific. Every word should earn its place.`;
 
   return JSON.parse(response.choices[0].message.content);
 }
+
+export async function deepenNode(nodeLabel, parentContext, rootTopic = '', existingSummary = '') {
+  const needsCode = isCodeNode(nodeLabel) || isCodeRootTopic(rootTopic);
+
+  const toneInstruction = `Write in the voice of a knowledgeable, warm Indian educator — direct, confident, conversational. Use natural Indian English phrases like "basically", "actually", "you see", "only" for emphasis, and the occasional "isn't it?" or "right?". Use analogies from everyday Indian life where they fit naturally.`;
+
+  const codeField = needsCode
+    ? `- "code": a DIFFERENT, more advanced code example string (not a repeat of any basics already shown). Demonstrate an edge case, optimisation, or real-world pattern. No markdown fences.`
+    : '';
+
+  const systemPrompt = `You are an expert educator giving the advanced masterclass on "${nodeLabel}" within the context of "${parentContext || nodeLabel}".
+
+${toneInstruction}
+
+The user has already read this basic summary — DO NOT repeat it:
+"${existingSummary}"
+
+Your job is to go significantly deeper. Focus on:
+1. Non-obvious nuances, edge cases, and gotchas practitioners actually run into
+2. Why it works the way it does (the "why", not just the "what")
+3. Advanced patterns, trade-offs, or design decisions
+4. A memorable real-world analogy or mental model if one applies
+
+Return ONLY a JSON object with exactly these fields:
+- "advancedInsights": array of 3-5 strings, each a meaty advanced insight (NOT obvious facts) — these should feel like tips from a senior engineer or professor
+- "analogy": a single vivid analogy or mental model string that makes the concept click (or null if nothing natural fits)
+${codeField}
+
+Be precise. Every sentence must earn its place. No filler.`;
+
+  const response = await client.chat.completions.create({
+    model: MODEL,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      {
+        role: 'user',
+        content: `Topic: "${nodeLabel}"\nContext: "${parentContext || nodeLabel}"`,
+      },
+    ],
+    response_format: { type: 'json_object' },
+    temperature: 0.8,
+  });
+
+  return JSON.parse(response.choices[0].message.content);
+}
