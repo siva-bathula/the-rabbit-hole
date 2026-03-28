@@ -20,6 +20,17 @@ const GROUP_COLORS = {
   mechanism:   '#8B5CF6', // violet
 };
 
+function getDisplayLabel(label, isMobile) {
+  if (!isMobile || !label) return label;
+  const words = label.split(' ');
+  // Already short enough — show as-is
+  if (label.length <= 16 || words.length <= 2) return label;
+  // Try two words first; if still reasonable length use them, else truncate first word
+  const twoWords = words.slice(0, 2).join(' ');
+  if (twoWords.length <= 18) return twoWords + (words.length > 2 ? '…' : '');
+  return words[0] + '…';
+}
+
 function getNodeRadius(node) {
   if (node.id === 'root') return 10;
   // Deeper nodes are subtly smaller to convey hierarchy
@@ -116,6 +127,8 @@ export default function Graph({
     }
   }, [hasNodes]);
 
+  const isMobile = dimensions.width < 640;
+
   const drawNode = useCallback(
     (node, ctx, globalScale) => {
       // Skip drawing until the force simulation has assigned finite coordinates
@@ -191,9 +204,9 @@ export default function Graph({
       ctx.fillStyle = isSelected
         ? 'rgba(233,213,255,1)'
         : 'rgba(255,255,255,0.85)';
-      ctx.fillText(node.label, node.x, node.y + r + 4 / globalScale);
+      ctx.fillText(getDisplayLabel(node.label, isMobile), node.x, node.y + r + 4 / globalScale);
     },
-    [selectedNode, expandedNodes, expandingNodeId]
+    [selectedNode, expandedNodes, expandingNodeId, isMobile]
   );
 
   const paintPointerArea = useCallback((node, color, ctx) => {

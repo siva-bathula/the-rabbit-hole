@@ -224,6 +224,32 @@ export function useGraph() {
     });
   }, []);
 
+  const snapshot = useCallback(() => ({
+    graphData: { nodes: [...nodesRef.current], links: [...linksRef.current] },
+    expandedNodes: new Set(expandedNodes),
+    rootLabel: rootLabelRef.current,
+    parentLabelOf: new Map(parentLabelOfRef.current),
+    originalPosition: new Map(originalPositionRef.current),
+    explanationCache: new Map(explanationCacheRef.current),
+    expandDataCache: new Map(expandDataCacheRef.current),
+  }), [expandedNodes]);
+
+  const restore = useCallback((snap) => {
+    nodesRef.current = snap.graphData.nodes;
+    linksRef.current = snap.graphData.links;
+    rootLabelRef.current = snap.rootLabel;
+    parentLabelOfRef.current = snap.parentLabelOf;
+    originalPositionRef.current = snap.originalPosition;
+    explanationCacheRef.current = snap.explanationCache;
+    expandDataCacheRef.current = snap.expandDataCache;
+    setGraphData(snap.graphData);
+    setExpandedNodes(snap.expandedNodes);
+    setRootLabel(snap.rootLabel);
+    setSelectedNode(null);
+    setExpandingNodeId(null);
+    setError(null);
+  }, []);
+
   const reset = useCallback(() => {
     setGraphData({ nodes: [], links: [] });
     setExpandedNodes(new Set());
@@ -253,6 +279,8 @@ export function useGraph() {
     expand,
     collapse,
     reset,
+    snapshot,
+    restore,
     explanationCache: explanationCacheRef,
   };
 }

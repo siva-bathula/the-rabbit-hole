@@ -358,6 +358,7 @@ export default function SlowBurnView({
   isExploring,
   onExplore,
   explanationCache,
+  onAskFollowUp,
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 640);
 
@@ -423,11 +424,24 @@ export default function SlowBurnView({
         <button
           onClick={() => setSidebarOpen((v) => !v)}
           className="absolute left-0 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center
-            w-5 h-10 rounded-r-lg text-white/40 hover:text-white transition-all"
-          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)' }}
+            w-9 h-20 rounded-r-2xl text-white transition-all active:scale-95"
+          style={{
+            background: 'linear-gradient(180deg, #7c3aed 0%, #a855f7 100%)',
+            border: '1px solid rgba(196,148,255,0.5)',
+            boxShadow: '3px 0 20px rgba(168,85,247,0.55), inset 0 1px 0 rgba(255,255,255,0.15)',
+          }}
           title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
         >
-          <span className="text-xs font-bold leading-none">{sidebarOpen ? '«' : '»'}</span>
+          <svg
+            className="w-5 h-5 transition-transform duration-300"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={3}
+            style={{ transform: sidebarOpen ? 'rotate(0deg)' : 'rotate(180deg)' }}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
         </button>
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto">
@@ -448,12 +462,34 @@ export default function SlowBurnView({
 
         {/* Navigation footer */}
         <div
-          className="flex-shrink-0 px-8 py-4 flex items-center justify-between gap-4"
+          className="flex-shrink-0 px-5 pt-3 pb-4 flex flex-col gap-2.5"
           style={{
             borderTop: '1px solid rgba(255,255,255,0.07)',
             background: 'rgba(255,255,255,0.02)',
           }}
         >
+          {/* Ask follow-up — shown for all non-root nodes */}
+          {onAskFollowUp && currentNode && currentNode.id !== 'root' && (
+            <button
+              onClick={() => onAskFollowUp(currentNode)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl
+                text-sm font-medium transition-all active:scale-95
+                text-purple-200/80 hover:text-white"
+              style={{
+                background: 'rgba(168,85,247,0.10)',
+                border: '1px solid rgba(168,85,247,0.28)',
+              }}
+            >
+              <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Ask a follow-up
+            </button>
+          )}
+
+          {/* Bottom row: progress + back | depth actions + next */}
+          <div className="flex items-center justify-between gap-4">
           {/* Left: progress + back */}
           <div className="flex items-center gap-4">
             {slowQueue.length > 0 && (
@@ -550,6 +586,7 @@ export default function SlowBurnView({
                 </svg>
               </button>
             )}
+          </div>
           </div>
         </div>
       </div>

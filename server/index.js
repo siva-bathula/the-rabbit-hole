@@ -8,6 +8,8 @@ import exploreRouter from './routes/explore.js';
 import expandRouter from './routes/expand.js';
 import explainRouter from './routes/explain.js';
 import deepenRouter from './routes/deepen.js';
+import trendingRouter from './routes/trending.js';
+import { fetchAndCacheTrending } from './services/trending.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -35,6 +37,7 @@ app.use('/api/explore', exploreRouter);
 app.use('/api/expand', expandRouter);
 app.use('/api/explain', explainRouter);
 app.use('/api/deepen', deepenRouter);
+app.use('/api/trending', trendingRouter);
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
 
 // Serve the React build in production
@@ -47,4 +50,6 @@ if (!IS_DEV) {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Rabbit Hole server running on http://0.0.0.0:${PORT}`);
+  // Warm the trending-topics cache immediately in the background
+  fetchAndCacheTrending().catch(() => {});
 });

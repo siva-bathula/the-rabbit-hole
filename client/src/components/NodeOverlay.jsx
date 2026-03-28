@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
-export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onCollapse, onExplore, isExpanding, isExpanded, explanationCache }) {
+export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onCollapse, onExplore, isExpanding, isExpanded, explanationCache, onForkHole, onAskFollowUp }) {
   const [explanation, setExplanation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -308,6 +308,25 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
                     </div>
                   )}
 
+                  {/* Open in new exploration (fork) */}
+                  {onForkHole && (
+                    <div className="pt-1">
+                      <button
+                        onClick={() => onForkHole(node.label)}
+                        className="w-full flex items-center justify-center gap-2 py-2 px-4 rounded-xl
+                          text-xs font-medium transition-all border
+                          bg-white/3 border-white/8 text-white/35
+                          hover:bg-cyan-500/10 hover:border-cyan-500/25 hover:text-cyan-300/80"
+                      >
+                        <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                        Open in new exploration
+                      </button>
+                    </div>
+                  )}
+
                   {/* Pull the Thread — deeper content */}
                   {!deeperContent && (
                     <div className="pt-2">
@@ -402,7 +421,27 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
             </div>
 
             {/* Footer actions */}
-            <div className="px-6 py-4 border-t border-white/10 flex gap-3 flex-shrink-0">
+            <div className="px-6 pt-4 pb-4 border-t border-white/10 flex flex-col gap-2.5 flex-shrink-0">
+              {/* Ask follow-up — always visible for non-root nodes */}
+              {onAskFollowUp && node.id !== 'root' && (
+                <button
+                  onClick={() => onAskFollowUp(node)}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl
+                    text-sm font-medium transition-all
+                    text-purple-200/80 hover:text-white active:scale-95"
+                  style={{
+                    background: 'rgba(168,85,247,0.10)',
+                    border: '1px solid rgba(168,85,247,0.28)',
+                  }}
+                >
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Ask a follow-up
+                </button>
+              )}
+            <div className="flex gap-3">
               {node.id !== 'root' && (isExpanded ? (
                 <button
                   onClick={() => onCollapse(node)}
@@ -445,6 +484,7 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
               >
                 Close
               </button>
+            </div>
             </div>
           </div>
         </div>
