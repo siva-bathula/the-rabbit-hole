@@ -90,6 +90,8 @@ Rules:
   return data.topics.slice(0, 4);
 }
 
+const REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+
 export async function fetchAndCacheTrending() {
   if (isFetching) return;
   isFetching = true;
@@ -99,11 +101,36 @@ export async function fetchAndCacheTrending() {
     const headlines = await fetchHeadlines();
     console.log(`[trending] Got ${headlines.length} headlines, distilling…`);
     const topics = await distilTopics(headlines);
-    cachedTopics = topics;
-    console.log('[trending] Cache warmed:', topics);
+
+    // Only update the cache if we got exactly 4 valid topics
+    if (Array.isArray(topics) && topics.length === 4) {
+      cachedTopics = topics;
+      console.log('[trending] Cache updated:', topics);
+    } else {
+      console.warn('[trending] Skipping cache update — expected 4 topics, got:', topics?.length ?? 0);
+    }
   } catch (err) {
     console.error('[trending] Failed:', err.message);
   } finally {
     isFetching = false;
   }
+}
+
+/**
+ * Call once on server start. Runs an immediate fetch then refreshes
+ * every 30 minutes in the background. The existing cache is never
+ * cleared on failure — only replaced on a successful 4-topic fetch.
+ */
+export function startTrendingRefresh() {
+  // Immediate warm-up
+  fetchAndCacheTrending().catch(() => {});
+
+  // Periodic refresh — unref() so this timer never prevents process exit
+  const timer = setInterval(() => {
+    console.log('[trending] Scheduled refresh triggered');
+    fetchAndCacheTrending().catch(() => {});
+  }, REFRESH_INTERVAL_MS);
+
+  timer.unref();
+  console.log(`[trending] Auto-refresh scheduled every ${REFRESH_INTERVAL_MS / 60000} minutes`);
 }

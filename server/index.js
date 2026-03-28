@@ -9,7 +9,7 @@ import expandRouter from './routes/expand.js';
 import explainRouter from './routes/explain.js';
 import deepenRouter from './routes/deepen.js';
 import trendingRouter from './routes/trending.js';
-import { fetchAndCacheTrending } from './services/trending.js';
+import { startTrendingRefresh } from './services/trending.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -54,6 +54,6 @@ if (!IS_DEV) {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Rabbit Hole server running on http://0.0.0.0:${PORT}`);
-  // Warm the trending-topics cache immediately in the background
-  fetchAndCacheTrending().catch(() => {});
+  // Warm the cache immediately, then refresh every 30 minutes
+  startTrendingRefresh();
 });

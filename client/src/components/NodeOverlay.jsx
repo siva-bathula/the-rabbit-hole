@@ -420,6 +420,11 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
               )}
             </div>
 
+            {/* AI disclaimer */}
+            <p className="px-6 pb-3 text-center text-white/20 text-xs leading-relaxed">
+              AI-generated · may be inaccurate · not professional advice
+            </p>
+
             {/* Footer actions */}
             <div className="px-6 pt-4 pb-4 border-t border-white/10 flex flex-col gap-2.5 flex-shrink-0">
               {/* Ask follow-up — always visible for non-root nodes */}
