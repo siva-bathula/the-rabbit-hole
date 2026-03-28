@@ -20,6 +20,9 @@ let cachedTopics = [];
 let isFetching = false;
 
 export function getCachedTrending() {
+  if (cachedTopics.length === 0 && !isFetching) {
+    fetchAndCacheTrending().catch(() => {});
+  }
   return cachedTopics;
 }
 
