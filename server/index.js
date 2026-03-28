@@ -14,6 +14,10 @@ import { fetchAndCacheTrending } from './services/trending.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 4000;
+
+// Trust the first proxy hop (GCP Cloud Run / any load balancer)
+// so express-rate-limit can read the real client IP from X-Forwarded-For
+app.set('trust proxy', 1);
 const IS_DEV = process.env.NODE_ENV !== 'production';
 
 const apiLimiter = rateLimit({

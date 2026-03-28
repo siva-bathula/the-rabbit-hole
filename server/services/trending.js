@@ -8,8 +8,13 @@ const client = new OpenAI({
 
 const MODEL = 'deepseek-chat';
 
-// Times of India top stories RSS — no API key, no rate limits
-const RSS_URL = 'https://timesofindia.indiatimes.com/rssfeedstopstories.cms';
+// Google News RSS — works reliably from cloud environments (GCP, etc.)
+const RSS_SOURCES = [
+  // India headlines by geo — most direct
+  'https://news.google.com/rss/headlines/section/geo/IN?hl=en-IN&gl=IN&ceid=IN:en',
+  // Search-based fallback
+  'https://news.google.com/rss/search?q=india+news&hl=en-IN&gl=IN&ceid=IN:en',
+];
 
 let cachedTopics = [];
 let isFetching = false;
@@ -18,25 +23,37 @@ export function getCachedTrending() {
   return cachedTopics;
 }
 
+// Google News titles come as "Headline text - Source Name" — strip the source suffix
+function cleanTitle(raw) {
+  if (!raw) return '';
+  return raw.replace(/\s[-–]\s[^-–]+$/, '').trim();
+}
+
 async function fetchHeadlines() {
-  const res = await fetch(RSS_URL, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RabbitHole/1.0)' },
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!res.ok) throw new Error(`RSS fetch failed: ${res.status}`);
+  for (const url of RSS_SOURCES) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RabbitHole/1.0)' },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) continue;
 
-  const xml = await res.text();
-  const parser = new XMLParser();
-  const parsed = parser.parse(xml);
+      const xml = await res.text();
+      const parser = new XMLParser();
+      const parsed = parser.parse(xml);
 
-  const items = parsed?.rss?.channel?.item ?? [];
-  const headlines = (Array.isArray(items) ? items : [items])
-    .slice(0, 10)
-    .map((item) => item.title)
-    .filter(Boolean);
+      const items = parsed?.rss?.channel?.item ?? [];
+      const headlines = (Array.isArray(items) ? items : [items])
+        .slice(0, 10)
+        .map((item) => cleanTitle(item.title))
+        .filter(Boolean);
 
-  if (headlines.length === 0) throw new Error('No headlines found in RSS');
-  return headlines;
+      if (headlines.length > 0) return headlines;
+    } catch {
+      continue;
+    }
+  }
+  throw new Error('All RSS sources failed');
 }
 
 async function distilTopics(headlines) {
@@ -56,7 +73,7 @@ Rules:
       },
       {
         role: 'user',
-        content: `Here are today's top headlines from Times of India:\n\n${headlines.map((h, i) => `${i + 1}. ${h}`).join('\n')}\n\nDistil 4 topic labels from these.`,
+        content: `Here are today's top headlines from Google News India:\n\n${headlines.map((h, i) => `${i + 1}. ${h}`).join('\n')}\n\nDistil 4 topic labels from these.`,
       },
     ],
     response_format: { type: 'json_object' },
