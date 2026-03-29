@@ -51,8 +51,9 @@ router.post('/', async (req, res) => {
       graphData,
       rootLabel: rootLabel || '',
       expandedNodes: expandedNodes || [],
-      parentLabelOf: parentLabelOf || [],
-      originalPosition: originalPosition || [],
+      // Store Maps as plain objects — Firestore forbids nested arrays
+      parentLabelOf: Object.fromEntries(parentLabelOf || []),
+      originalPosition: Object.fromEntries(originalPosition || []),
       createdAt: Timestamp.now(),
     });
 
@@ -87,8 +88,9 @@ router.get('/:id', async (req, res) => {
       graphData: data.graphData,
       rootLabel: data.rootLabel,
       expandedNodes: data.expandedNodes,
-      parentLabelOf: data.parentLabelOf,
-      originalPosition: data.originalPosition,
+      // Convert plain objects back to [key, value] pairs for new Map() on the client
+      parentLabelOf: Object.entries(data.parentLabelOf || {}),
+      originalPosition: Object.entries(data.originalPosition || {}),
     });
   } catch (err) {
     console.error('[share GET] error:', err.message);
