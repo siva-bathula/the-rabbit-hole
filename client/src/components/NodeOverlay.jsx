@@ -348,6 +348,24 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
                     </div>
                   )}
 
+                  {/* Key Takeaway card */}
+                  {explanation.keyTakeaway && (
+                    <div
+                      className="rounded-xl px-4 py-3.5"
+                      style={{
+                        background: 'rgba(168,85,247,0.07)',
+                        border: '1px solid rgba(168,85,247,0.18)',
+                      }}
+                    >
+                      <p className="text-xs font-semibold uppercase tracking-widest text-purple-400/70 mb-2 flex items-center gap-1.5">
+                        <span>💡</span> Key Takeaway
+                      </p>
+                      <p className="text-white/70 text-sm leading-relaxed italic">
+                        {explanation.keyTakeaway}
+                      </p>
+                    </div>
+                  )}
+
                   {/* Pull the Thread — deeper content */}
                   {!deeperContent && (
                     <div className="pt-2">

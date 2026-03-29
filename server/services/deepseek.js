@@ -189,7 +189,8 @@ ${toneInstruction}
 Return ONLY a JSON object with exactly these fields:
 - "title": the concept name (string)
 - "summary": 2-3 sentence overview of what this topic is and why it matters (string)
-- "details": array of 3-4 key insight strings that give a high-level map of the territory ??? what are the most important things to understand about this topic? (array of strings)
+- "details": array of 3-4 key insight strings that give a high-level map of the territory ? what are the most important things to understand about this topic? (array of strings)
+- "keyTakeaway": ONE punchy sentence ? the single most important thing to remember about this topic. Must be different from the summary. Think of it as the "if you forget everything else, remember this" line. (string)
 - "related": array of 3-5 subtopics or adjacent concepts worth exploring (array of strings)
 ${learnMoreField}
 ${codeField}
@@ -208,6 +209,7 @@ Return ONLY a JSON object with exactly these fields:
 - "title": the concept name (string)
 - "summary": 2-3 sentences explaining what "${nodeLabel}" specifically means or does in the context of "${parentContext}" (string)
 - "details": array of 3-4 key insight strings, each revealing something non-obvious or particularly important about "${nodeLabel}" as it applies to "${parentContext}" (array of strings)
+- "keyTakeaway": ONE punchy sentence ? the single most important thing to remember about "${nodeLabel}". Must be different from the summary. Think of it as the "if you forget everything else, remember this" line. (string)
 - "related": array of 3-5 related concept labels the user might want to explore next (array of strings)
 ${learnMoreField}
 ${codeField}
