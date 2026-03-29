@@ -8,12 +8,24 @@ const client = new OpenAI({
 
 const MODEL = 'deepseek-chat';
 
-// Google News RSS — works reliably from cloud environments (GCP, etc.)
+// Indian news RSS feeds — tried in order, first to return ≥3 valid headlines wins
 const RSS_SOURCES = [
-  // India headlines by geo — most direct
-  'https://news.google.com/rss/headlines/section/geo/IN?hl=en-IN&gl=IN&ceid=IN:en',
-  // Search-based fallback
+  // NDTV top stories
+  'https://feeds.feedburner.com/ndtvnews-top-stories',
+  // India Today
+  'https://www.indiatoday.in/rss/1206578',
+  // The Hindu - National
+  'https://www.thehindu.com/news/national/?service=rss',
+  // Google News India geo (may be geo-blocked on some servers)
   'https://news.google.com/rss/search?q=india+news&hl=en-IN&gl=IN&ceid=IN:en',
+];
+
+// Strings that indicate the feed returned an error page rather than real headlines
+const ERROR_STRINGS = [
+  'this feed is not available',
+  'feed not found',
+  'page not found',
+  '404',
 ];
 
 let cachedTopics = [];
@@ -49,9 +61,14 @@ async function fetchHeadlines() {
       const headlines = (Array.isArray(items) ? items : [items])
         .slice(0, 10)
         .map((item) => cleanTitle(item.title))
-        .filter(Boolean);
+        .filter((t) => {
+          if (!t) return false;
+          const lower = t.toLowerCase();
+          return !ERROR_STRINGS.some((e) => lower.includes(e));
+        });
 
-      if (headlines.length > 0) return headlines;
+      // Require at least 3 valid headlines before accepting this source
+      if (headlines.length >= 3) return headlines;
     } catch {
       continue;
     }
@@ -60,6 +77,7 @@ async function fetchHeadlines() {
 }
 
 async function distilTopics(headlines) {
+  console.log('[trending] Distiling topics from headlines:', headlines);
   const response = await client.chat.completions.create({
     model: MODEL,
     messages: [
@@ -73,8 +91,7 @@ Rules:
 - Prefer uplifting, educational, or aspirational topics over conflict or controversy
 - STRICTLY AVOID any topic that is anti-Indian, politically divisive, religiously sensitive, or paints India in a negative light
 - STRICTLY AVOID geopolitical conflicts, border disputes, war, terrorism, communal tensions, or any topic that could be seen as controversial within India
-- Prefer topics like Indian space missions, economic growth, sporting achievements, cultural heritage, scientific breakthroughs, infrastructure milestones
-- Labels must be short, positive, and search-friendly (e.g. "India's Space Programme", "Indian Classical Music", "India's Green Energy Push", "Startup India")
+- Labels must be short, positive, and search-friendly
 - Avoid full sentences — keep it to a short noun phrase
 - Return ONLY a JSON object: { "topics": ["...", "...", "...", "..."] }`,
       },
