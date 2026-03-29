@@ -98,7 +98,7 @@ function useNodeExplanation(node, parentContext, rootLabel, cache) {
   return { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread };
 }
 
-function ContentArea({ node, parentContext, rootLabel, cache, onExplore }) {
+function ContentArea({ node, parentContext, rootLabel, cache, onExplore, onQuizMe }) {
   const { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread } = useNodeExplanation(node, parentContext, rootLabel, cache);
   const [copied, setCopied] = useState(false);
   const [copiedDeeper, setCopiedDeeper] = useState(false);
@@ -254,6 +254,22 @@ function ContentArea({ node, parentContext, rootLabel, cache, onExplore }) {
             </div>
           )}
 
+          {/* Quiz Me */}
+          {onQuizMe && explanation && (
+            <div className="pt-1">
+              <button
+                onClick={() => onQuizMe(node, explanation)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl
+                  text-sm font-medium transition-all border active:scale-95
+                  hover:bg-amber-500/10 hover:border-amber-500/30 hover:text-amber-200"
+                style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.2)', color: 'rgba(253,230,138,0.8)' }}
+              >
+                <span>🧠</span>
+                Quiz Me on This
+              </button>
+            </div>
+          )}
+
           {/* Pull the Thread — deeper content */}
           {!deeperContent && (
             <div className="pt-2">
@@ -359,6 +375,7 @@ export default function SlowBurnView({
   onExplore,
   explanationCache,
   onAskFollowUp,
+  onQuizMe,
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 640);
 
@@ -452,6 +469,7 @@ export default function SlowBurnView({
               rootLabel={rootLabel}
               cache={explanationCache}
               onExplore={onExplore}
+              onQuizMe={onQuizMe}
             />
           ) : (
             <div className="flex items-center justify-center h-full">

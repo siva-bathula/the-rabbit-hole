@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import SearchBar from './components/SearchBar.jsx';
 import Graph from './components/Graph.jsx';
 import NodeOverlay from './components/NodeOverlay.jsx';
@@ -6,6 +6,12 @@ import SlowBurnView from './components/SlowBurnView.jsx';
 import SessionsDrawer from './components/SessionsDrawer.jsx';
 import FollowUpModal from './components/FollowUpModal.jsx';
 import { useGraph } from './hooks/useGraph.js';
+import QuizOverlay from './components/QuizOverlay.jsx';
+import {
+  saveLive, loadLive, clearLive,
+  saveSessions, loadSessions,
+  saveMode, loadMode,
+} from './lib/persist.js';
 
 function buildSession(topic, mode, snap) {
   const previewNodes = snap.graphData.nodes
@@ -33,9 +39,11 @@ function buildSession(topic, mode, snap) {
 export default function App() {
   const [phase, setPhase] = useState('search'); // 'search' | 'graph'
   const [currentTopic, setCurrentTopic] = useState('');
-  const [mode, setMode] = useState('fast'); // 'fast' | 'slow'
 
-  // Search history — persisted to localStorage
+  // Mode — initialised from localStorage (#4)
+  const [mode, setMode] = useState(() => loadMode());
+
+  // Search history — persisted to localStorage, cap 10, case-normalised (#5)
   const [searchHistory, setSearchHistory] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem('rabbit-hole-history') || '[]');
@@ -44,8 +52,8 @@ export default function App() {
     }
   });
 
-  // In-memory exploration sessions
-  const [sessions, setSessions] = useState([]);
+  // Sessions — initialised from localStorage (#2)
+  const [sessions, setSessions] = useState(() => loadSessions());
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [sessionsOpen, setSessionsOpen] = useState(false);
 
@@ -55,9 +63,18 @@ export default function App() {
   // Follow-up modal — triggered from NodeOverlay
   const [followUpNode, setFollowUpNode] = useState(null);
 
+  // Quiz overlay — { node, explanation }
+  const [quizTarget, setQuizTarget] = useState(null);
+
   const saveToHistory = useCallback((topic) => {
+    const normalised = topic.trim();
+    if (!normalised) return;
     setSearchHistory((prev) => {
-      const next = [topic, ...prev.filter((t) => t !== topic)].slice(0, 5);
+      // Case-insensitive dedup (#5)
+      const filtered = prev.filter(
+        (t) => t.toLowerCase() !== normalised.toLowerCase(),
+      );
+      const next = [normalised, ...filtered].slice(0, 10); // cap at 10 (#5)
       localStorage.setItem('rabbit-hole-history', JSON.stringify(next));
       return next;
     });
@@ -80,6 +97,44 @@ export default function App() {
     restore,
     explanationCache,
   } = useGraph();
+
+  // ── Persistence effects ────────────────────────────────────────────────────
+
+  // #4 — Save mode whenever it changes
+  useEffect(() => { saveMode(mode); }, [mode]);
+
+  // #2 — Save sessions whenever they change
+  useEffect(() => { saveSessions(sessions); }, [sessions]);
+
+  // #1 + #3 — Save live graph (including explanation cache) whenever graphData
+  // changes. Guard: don't save while a fetch is in-flight (graphData is empty
+  // during explore) or before the restore-on-mount effect has run.
+  const restoredRef = useRef(false);
+  const persistLive = useCallback(() => {
+    if (!restoredRef.current) return;
+    const snap = snapshot();
+    if (!snap.graphData.nodes.length) return;
+    saveLive({ snap, topic: currentTopic, mode });
+  }, [snapshot, currentTopic, mode]);
+
+  useEffect(() => {
+    if (phase === 'graph' && !isExploring) persistLive();
+  }, [graphData, phase, isExploring, persistLive]);
+
+  // #1 — Restore live graph on first mount (runs once)
+  useEffect(() => {
+    const saved = loadLive();
+    if (saved && saved.snap.graphData.nodes.length > 0) {
+      restore(saved.snap);
+      setCurrentTopic(saved.topic);
+      setMode(saved.mode);
+      setPhase('graph');
+    }
+    restoredRef.current = true;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── End persistence effects ────────────────────────────────────────────────
 
   // Save the live graph into the sessions list.
   // Returns the new session id so callers can set activeSessionId.
@@ -270,10 +325,10 @@ export default function App() {
         return [...prev, session];
       });
     }
+    clearLive(); // user explicitly left — don't auto-restore this graph
     reset();
     setPhase('search');
     setCurrentTopic('');
-    setMode('fast');
     setPrefillTopic('');
     setActiveSessionId(null);
   };
@@ -319,6 +374,8 @@ export default function App() {
                   isExpanded={expandedNodes.has(selectedNode.id)}
                   explanationCache={explanationCache}
                   onForkHole={handleForkHole}
+                  onExplanationCached={persistLive}
+                  onQuizMe={(node, explanation) => setQuizTarget({ node, explanation, rootTopic: rootLabel })}
                   onAskFollowUp={(node) => { setSelectedNode(null); setFollowUpNode(node); }}
                 />
               )}
@@ -360,6 +417,7 @@ export default function App() {
                 isExploring={isExploring}
                 onExplore={handleRelatedExplore}
                 explanationCache={explanationCache}
+                onQuizMe={(node, explanation) => setQuizTarget({ node, explanation, rootTopic: rootLabel })}
                 onAskFollowUp={(node) => setFollowUpNode(node)}
               />
             </div>
@@ -492,6 +550,16 @@ export default function App() {
           triggerNode={followUpNode}
           onSubmit={handleFollowUpSubmit}
           onClose={() => setFollowUpNode(null)}
+        />
+      )}
+
+      {/* Quiz overlay */}
+      {quizTarget && (
+        <QuizOverlay
+          node={quizTarget.node}
+          explanation={quizTarget.explanation}
+          rootTopic={quizTarget.rootTopic || ''}
+          onClose={() => setQuizTarget(null)}
         />
       )}
     </div>

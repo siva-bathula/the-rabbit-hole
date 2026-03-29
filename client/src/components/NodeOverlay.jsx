@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 
-export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onCollapse, onExplore, isExpanding, isExpanded, explanationCache, onForkHole, onAskFollowUp }) {
+export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onCollapse, onExplore, isExpanding, isExpanded, explanationCache, onForkHole, onExplanationCached, onAskFollowUp, onQuizMe }) {
   const [explanation, setExplanation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -56,6 +56,7 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
           else {
             setExplanation(data);
             explanationCache?.current?.set(node.id, { explanation: data, deeper: null });
+            onExplanationCached?.();
           }
         }
       })
@@ -93,6 +94,7 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
         if (explanationCache?.current?.has(node.id)) {
           const entry = explanationCache.current.get(node.id);
           explanationCache.current.set(node.id, { ...entry, deeper: data });
+          onExplanationCached?.();
         }
       }
     } catch {
@@ -363,6 +365,23 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
                       <p className="text-white/70 text-sm leading-relaxed italic">
                         {explanation.keyTakeaway}
                       </p>
+                    </div>
+                  )}
+
+                  {/* Quiz Me */}
+                  {onQuizMe && explanation && (
+                    <div className="pt-1">
+                      <button
+                        onClick={() => onQuizMe(node, explanation)}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl
+                          text-sm font-medium transition-all border
+                          hover:bg-amber-500/10 hover:border-amber-500/30 hover:text-amber-200
+                          active:scale-95"
+                        style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.2)', color: 'rgba(253,230,138,0.8)' }}
+                      >
+                        <span>🧠</span>
+                        Quiz Me on This
+                      </button>
                     </div>
                   )}
 

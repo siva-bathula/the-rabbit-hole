@@ -9,6 +9,7 @@ import expandRouter from './routes/expand.js';
 import explainRouter from './routes/explain.js';
 import deepenRouter from './routes/deepen.js';
 import trendingRouter from './routes/trending.js';
+import quizRouter from './routes/quiz.js';
 import { startTrendingRefresh } from './services/trending.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -42,6 +43,7 @@ app.use('/api/expand', expandRouter);
 app.use('/api/explain', explainRouter);
 app.use('/api/deepen', deepenRouter);
 app.use('/api/trending', trendingRouter);
+app.use('/api/quiz', quizRouter);
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
 
 // Serve the React build in production

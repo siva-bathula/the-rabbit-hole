@@ -278,3 +278,48 @@ Be precise. Every sentence must earn its place. No filler.`;
 
   return JSON.parse(response.choices[0].message.content);
 }
+
+export async function generateQuiz(nodeLabel, explanation) {
+  const { summary = '', details = [], keyTakeaway = '' } = explanation;
+
+  const contentBlock = [
+    `Summary: ${summary}`,
+    details.length ? `Key insights:\n${details.map((d, i) => `${i + 1}. ${d}`).join('\n')}` : '',
+    keyTakeaway ? `Key takeaway: ${keyTakeaway}` : '',
+  ].filter(Boolean).join('\n\n');
+
+  const response = await client.chat.completions.create({
+    model: MODEL,
+    messages: [
+      {
+        role: 'system',
+        content: `${SAFETY_GUARDRAIL_BRIEF}You are an expert educator creating a short quiz to test understanding of a concept.
+
+Generate exactly 5 multiple-choice questions based on the content provided. Each question should test a distinct aspect of the topic.
+
+Rules:
+- Questions should be clear and unambiguous
+- Each question must have exactly 4 options
+- Exactly one option must be correct
+- The "correct" field is the zero-based index of the correct option (0, 1, 2, or 3)
+- The "explanation" field briefly explains why the correct answer is right (1-2 sentences)
+- Vary difficulty: 2 easy, 2 medium, 1 harder
+- Write in the same warm Indian educator tone
+
+Return ONLY a JSON object: { "questions": [ { "question": "...", "options": ["...", "...", "...", "..."], "correct": 0, "explanation": "..." } ] }`,
+      },
+      {
+        role: 'user',
+        content: `Topic: "${nodeLabel}"\n\n${contentBlock}\n\nGenerate 5 quiz questions on this.`,
+      },
+    ],
+    response_format: { type: 'json_object' },
+    temperature: 0.7,
+  });
+
+  const data = JSON.parse(response.choices[0].message.content);
+  if (!Array.isArray(data.questions) || data.questions.length === 0) {
+    throw new Error('Invalid quiz response from AI');
+  }
+  return data.questions.slice(0, 5);
+}
