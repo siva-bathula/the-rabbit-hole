@@ -12,6 +12,7 @@ import {
   saveSessions, loadSessions,
   saveMode, loadMode,
   saveExplainMode, loadExplainMode,
+  serializeShareSnap, deserializeShareSnap,
 } from './lib/persist.js';
 
 function buildSession(topic, mode, snap) {
@@ -69,6 +70,10 @@ export default function App() {
 
   // Quiz overlay — { node, explanation }
   const [quizTarget, setQuizTarget] = useState(null);
+
+  // Share graph state
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
 
   const saveToHistory = useCallback((topic) => {
     const normalised = topic.trim();
@@ -129,7 +134,28 @@ export default function App() {
   }, [graphData, phase, isExploring, persistLive]);
 
   // #1 — Restore live graph on first mount (runs once)
+  // If a ?share= param is present, load that graph from the API instead.
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shareId = params.get('share');
+
+    if (shareId) {
+      // Load shared graph — skip live restore, clear the query param from the URL
+      window.history.replaceState({}, '', window.location.pathname);
+      fetch(`/api/share/${shareId}`)
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.error) return;
+          const snap = deserializeShareSnap(data);
+          restore(snap);
+          setCurrentTopic(data.topic || '');
+          setPhase('graph');
+        })
+        .catch((err) => console.error('[share restore]', err))
+        .finally(() => { restoredRef.current = true; });
+      return;
+    }
+
     const saved = loadLive();
     if (saved && saved.snap.graphData.nodes.length > 0) {
       restore(saved.snap);
@@ -210,6 +236,30 @@ export default function App() {
     setSessions((prev) => prev.filter((s) => s.id !== id));
     if (activeSessionId === id) setActiveSessionId(null);
   }, [activeSessionId]);
+
+  const handleShare = useCallback(async () => {
+    if (isSharing) return;
+    setIsSharing(true);
+    try {
+      const snap = snapshot();
+      const body = serializeShareSnap(snap, currentTopic);
+      const res = await fetch('/api/share', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error('Share failed');
+      const { id } = await res.json();
+      const url = `${window.location.origin}/?share=${id}`;
+      await navigator.clipboard.writeText(url);
+      setShareCopied(true);
+      setTimeout(() => setShareCopied(false), 2500);
+    } catch (err) {
+      console.error('[share]', err);
+    } finally {
+      setIsSharing(false);
+    }
+  }, [snapshot, currentTopic, isSharing]);
 
   // "Open in new exploration" from NodeOverlay — saves current, goes to search pre-filled
   const handleForkHole = useCallback((nodeTopic) => {
@@ -470,6 +520,31 @@ export default function App() {
 
             {/* Row 2 (mobile) / right side (desktop): Sessions + mode toggle + node count */}
             <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 pointer-events-auto">
+              {/* Share button */}
+              <button
+                onClick={handleShare}
+                disabled={isSharing || graphData.nodes.length === 0}
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-sm font-medium transition-all border
+                  border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10
+                  disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: 'rgba(34,211,238,0.07)' }}
+                title="Copy shareable link"
+              >
+                {isSharing ? (
+                  <div className="w-4 h-4 rounded-full border-2 border-cyan-400/30 border-t-cyan-400 animate-spin" />
+                ) : shareCopied ? (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                  </svg>
+                )}
+                <span className="hidden sm:inline">{shareCopied ? 'Copied!' : 'Share'}</span>
+              </button>
+
               {/* Sessions pill */}
               {sessions.length > 0 && (
                 <button

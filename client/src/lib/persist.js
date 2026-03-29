@@ -125,6 +125,35 @@ export function loadSessions() {
   }
 }
 
+// ─── Share snapshot ───────────────────────────────────────────────────────────
+// Strips caches — recipient re-fetches explanations lazily on demand.
+
+export function serializeShareSnap(snap, topic) {
+  return {
+    topic: topic || '',
+    graphData: {
+      nodes: snap.graphData.nodes,
+      links: normalizeLinks(snap.graphData.links),
+    },
+    rootLabel: snap.rootLabel || '',
+    expandedNodes: [...snap.expandedNodes],
+    parentLabelOf: [...snap.parentLabelOf.entries()],
+    originalPosition: [...snap.originalPosition.entries()],
+  };
+}
+
+export function deserializeShareSnap(raw) {
+  return {
+    graphData: raw.graphData,
+    rootLabel: raw.rootLabel,
+    expandedNodes: new Set(raw.expandedNodes),
+    parentLabelOf: new Map(raw.parentLabelOf),
+    originalPosition: new Map(raw.originalPosition),
+    explanationCache: new Map(),
+    expandDataCache: new Map(),
+  };
+}
+
 // ─── Mode preference ──────────────────────────────────────────────────────────
 
 export function saveMode(mode) {
