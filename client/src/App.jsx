@@ -121,8 +121,8 @@ export default function App() {
     if (!restoredRef.current) return;
     const snap = snapshot();
     if (!snap.graphData.nodes.length) return;
-    saveLive({ snap, topic: currentTopic, mode });
-  }, [snapshot, currentTopic, mode]);
+    saveLive({ snap, topic: currentTopic, mode, activeSessionId });
+  }, [snapshot, currentTopic, mode, activeSessionId]);
 
   useEffect(() => {
     if (phase === 'graph' && !isExploring) persistLive();
@@ -136,6 +136,7 @@ export default function App() {
       setCurrentTopic(saved.topic);
       setMode(saved.mode);
       setPhase('graph');
+      if (saved.activeSessionId) setActiveSessionId(saved.activeSessionId);
     }
     restoredRef.current = true;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -170,13 +171,13 @@ export default function App() {
 
   // Switch to a saved session (saves current first)
   const switchToSession = useCallback((id) => {
-    // Save current live graph under activeSessionId
-    if (graphData.nodes.length > 0) {
+    // Save current live graph back to its own session (only if there is one)
+    if (graphData.nodes.length > 0 && activeSessionId) {
       const snap = snapshot();
       const updated = buildSession(currentTopic, mode, snap);
       setSessions((prev) =>
         prev.map((s) =>
-          s.id === (activeSessionId ?? id)
+          s.id === activeSessionId
             ? { ...updated, id: s.id }
             : s,
         ),

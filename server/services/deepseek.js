@@ -317,6 +317,7 @@ Rules:
 - The "explanation" field briefly explains why the correct answer is right (1-2 sentences)
 - Vary difficulty: 2 easy, 2 medium, 1 harder
 - Write in the same warm Indian educator tone
+- CRITICAL: The "question" field must contain ONLY the question itself ? no preamble, no transition phrases, no encouragement text like "Great job!", "Fantastic effort!", "Now let's try a harder one", or any other filler. Start directly with the question.
 
 Return ONLY a JSON object: { "questions": [ { "question": "...", "options": ["...", "...", "...", "..."], "correct": 0, "explanation": "..." } ] }`;
 

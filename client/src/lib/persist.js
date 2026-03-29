@@ -55,12 +55,12 @@ function deserializeSnap(raw) {
 
 // ─── Live graph ───────────────────────────────────────────────────────────────
 
-export function saveLive({ snap, topic, mode }) {
+export function saveLive({ snap, topic, mode, activeSessionId }) {
   if (!snap.graphData.nodes.length) return;
   try {
     localStorage.setItem(
       KEYS.LIVE,
-      JSON.stringify({ ...serializeSnap(snap), topic, mode }),
+      JSON.stringify({ ...serializeSnap(snap), topic, mode, activeSessionId: activeSessionId ?? null }),
     );
   } catch {}
 }
@@ -69,7 +69,7 @@ export function loadLive() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEYS.LIVE) || 'null');
     if (!raw || !raw.graphData?.nodes?.length) return null;
-    return { snap: deserializeSnap(raw), topic: raw.topic, mode: raw.mode };
+    return { snap: deserializeSnap(raw), topic: raw.topic, mode: raw.mode, activeSessionId: raw.activeSessionId ?? null };
   } catch {
     return null;
   }
