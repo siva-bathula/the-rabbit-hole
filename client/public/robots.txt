@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+
+# Block API endpoints from being indexed
+Disallow: /api/
+
+Sitemap: https://rabbitholeorg.org/sitemap.xml

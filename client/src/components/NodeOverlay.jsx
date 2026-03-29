@@ -152,6 +152,27 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
               </button>
             </div>
 
+            {/* Branch Out progress banner */}
+            {isExpanding && (
+              <div
+                className="flex items-center gap-3 px-5 py-3 flex-shrink-0"
+                style={{ background: 'rgba(168,85,247,0.12)', borderBottom: '1px solid rgba(168,85,247,0.2)' }}
+              >
+                <div className="w-4 h-4 rounded-full border-2 border-purple-400/30 border-t-purple-400 animate-spin flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-purple-300 text-sm font-medium">Branching out…</p>
+                  <p className="text-purple-300/50 text-xs mt-0.5">Fetching subtopics for <span className="text-purple-300/80">{node.label}</span></p>
+                </div>
+                {/* Animated progress bar */}
+                <div className="w-20 h-1 rounded-full bg-purple-900/60 overflow-hidden flex-shrink-0">
+                  <div
+                    className="h-full rounded-full bg-purple-400"
+                    style={{ animation: 'progressSlide 1.6s ease-in-out infinite' }}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Content — grows and scrolls */}
             <div className="px-6 py-5 overflow-y-auto flex-1 min-h-0">
               {isLoading && (
