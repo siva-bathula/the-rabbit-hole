@@ -2,7 +2,17 @@ import { useState, useEffect, useCallback } from 'react';
 import FolderTree from './FolderTree.jsx';
 import { useSlowBurn } from '../hooks/useSlowBurn.js';
 
-function useNodeExplanation(node, parentContext, rootLabel, cache) {
+const MODES = [
+  { id: 'eli5', label: 'Simple' },
+  { id: 'normal', label: 'Normal' },
+  { id: 'expert', label: 'Expert' },
+];
+
+function modeCacheKey(nodeId, mode) {
+  return mode === 'normal' ? nodeId : `${nodeId}::${mode}`;
+}
+
+function useNodeExplanation(node, parentContext, rootLabel, cache, mode = 'normal') {
   const [explanation, setExplanation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -13,12 +23,14 @@ function useNodeExplanation(node, parentContext, rootLabel, cache) {
   useEffect(() => {
     if (!node) return;
 
+    const cacheKey = modeCacheKey(node.id, mode);
+
     setDeeperContent(null);
     setDeeperError(null);
     setIsPulling(false);
 
-    // Serve from cache if available
-    const cached = cache?.current?.get(node.id);
+    // Serve from per-mode cache if available
+    const cached = cache?.current?.get(cacheKey);
     if (cached) {
       setExplanation(cached.explanation ?? cached);
       setDeeperContent(cached.deeper ?? null);
@@ -39,6 +51,7 @@ function useNodeExplanation(node, parentContext, rootLabel, cache) {
         nodeLabel: node.label,
         parentContext: parentContext || node.label,
         rootTopic: rootLabel || '',
+        mode,
       }),
     })
       .then((r) => r.json())
@@ -47,7 +60,7 @@ function useNodeExplanation(node, parentContext, rootLabel, cache) {
           if (data.error) setError(data.error);
           else {
             setExplanation(data);
-            cache?.current?.set(node.id, { explanation: data, deeper: null });
+            cache?.current?.set(cacheKey, { explanation: data, deeper: null });
           }
         }
       })
@@ -61,12 +74,13 @@ function useNodeExplanation(node, parentContext, rootLabel, cache) {
     return () => {
       cancelled = true;
     };
-  }, [node?.id, parentContext]);
+  }, [node?.id, parentContext, mode]);
 
   const handlePullThread = useCallback(async () => {
     if (!explanation || isPulling) return;
     setIsPulling(true);
     setDeeperError(null);
+    const cacheKey = modeCacheKey(node.id, mode);
     try {
       const res = await fetch('/api/deepen', {
         method: 'POST',
@@ -76,6 +90,7 @@ function useNodeExplanation(node, parentContext, rootLabel, cache) {
           parentContext: parentContext || node.label,
           rootTopic: rootLabel || '',
           existingSummary: explanation.summary || '',
+          mode,
         }),
       });
       const data = await res.json();
@@ -83,9 +98,9 @@ function useNodeExplanation(node, parentContext, rootLabel, cache) {
         setDeeperError(data.error);
       } else {
         setDeeperContent(data);
-        if (cache?.current?.has(node.id)) {
-          const entry = cache.current.get(node.id);
-          cache.current.set(node.id, { ...entry, deeper: data });
+        const entry = cache?.current?.get(cacheKey);
+        if (entry) {
+          cache.current.set(cacheKey, { ...entry, deeper: data });
         }
       }
     } catch {
@@ -93,13 +108,13 @@ function useNodeExplanation(node, parentContext, rootLabel, cache) {
     } finally {
       setIsPulling(false);
     }
-  }, [explanation, isPulling, node, parentContext, rootLabel, cache]);
+  }, [explanation, isPulling, node, parentContext, rootLabel, mode, cache]);
 
   return { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread };
 }
 
-function ContentArea({ node, parentContext, rootLabel, cache, onExplore, onQuizMe }) {
-  const { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread } = useNodeExplanation(node, parentContext, rootLabel, cache);
+function ContentArea({ node, parentContext, rootLabel, cache, onExplore, onQuizMe, explainMode = 'normal', onExplainModeChange }) {
+  const { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread } = useNodeExplanation(node, parentContext, rootLabel, cache, explainMode);
   const [copied, setCopied] = useState(false);
   const [copiedDeeper, setCopiedDeeper] = useState(false);
 
@@ -119,7 +134,30 @@ function ContentArea({ node, parentContext, rootLabel, cache, onExplore, onQuizM
         <span className="text-xs font-semibold uppercase tracking-widest text-purple-400 mb-2 block">
           {parentContext && parentContext !== node.label ? `${parentContext} →` : 'Exploring'}
         </span>
-        <h1 className="text-3xl font-bold text-white leading-tight">{node.label}</h1>
+        <h1 className="text-3xl font-bold text-white leading-tight mb-4">{node.label}</h1>
+
+        {/* Explain depth toggle */}
+        <div className="flex items-center gap-2">
+          <span className="text-white/30 text-xs">Depth:</span>
+          <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.07)' }}>
+            {MODES.map(({ id, label }) => (
+              <button
+                key={id}
+                onClick={() => onExplainModeChange?.(id)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                  explainMode === id
+                    ? 'bg-purple-600 text-white shadow-sm'
+                    : 'text-white/40 hover:text-white/70'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {isLoading && (
+            <div className="w-3 h-3 rounded-full border border-purple-400/30 border-t-purple-400 animate-spin" />
+          )}
+        </div>
       </div>
 
       {isLoading && (
@@ -254,6 +292,24 @@ function ContentArea({ node, parentContext, rootLabel, cache, onExplore, onQuizM
             </div>
           )}
 
+          {/* Key Takeaway */}
+          {explanation.keyTakeaway && (
+            <div
+              className="rounded-xl px-4 py-3.5"
+              style={{
+                background: 'rgba(168,85,247,0.07)',
+                border: '1px solid rgba(168,85,247,0.18)',
+              }}
+            >
+              <p className="text-xs font-semibold uppercase tracking-widest text-purple-400/70 mb-2 flex items-center gap-1.5">
+                <span>💡</span> Key Takeaway
+              </p>
+              <p className="text-white/70 text-sm leading-relaxed italic">
+                {explanation.keyTakeaway}
+              </p>
+            </div>
+          )}
+
           {/* Quiz Me */}
           {onQuizMe && explanation && (
             <div className="pt-1">
@@ -376,6 +432,8 @@ export default function SlowBurnView({
   explanationCache,
   onAskFollowUp,
   onQuizMe,
+  explainMode,
+  onExplainModeChange,
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 640);
 
@@ -470,6 +528,8 @@ export default function SlowBurnView({
               cache={explanationCache}
               onExplore={onExplore}
               onQuizMe={onQuizMe}
+              explainMode={explainMode}
+              onExplainModeChange={onExplainModeChange}
             />
           ) : (
             <div className="flex items-center justify-center h-full">

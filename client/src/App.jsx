@@ -11,6 +11,7 @@ import {
   saveLive, loadLive, clearLive,
   saveSessions, loadSessions,
   saveMode, loadMode,
+  saveExplainMode, loadExplainMode,
 } from './lib/persist.js';
 
 function buildSession(topic, mode, snap) {
@@ -42,6 +43,9 @@ export default function App() {
 
   // Mode — initialised from localStorage (#4)
   const [mode, setMode] = useState(() => loadMode());
+
+  // Explain depth (ELI5 / Normal / Expert) — session-level, persisted
+  const [explainMode, setExplainMode] = useState(() => loadExplainMode());
 
   // Search history — persisted to localStorage, cap 10, case-normalised (#5)
   const [searchHistory, setSearchHistory] = useState(() => {
@@ -102,6 +106,9 @@ export default function App() {
 
   // #4 — Save mode whenever it changes
   useEffect(() => { saveMode(mode); }, [mode]);
+
+  // Save explain depth whenever it changes
+  useEffect(() => { saveExplainMode(explainMode); }, [explainMode]);
 
   // #2 — Save sessions whenever they change
   useEffect(() => { saveSessions(sessions); }, [sessions]);
@@ -331,6 +338,7 @@ export default function App() {
     setCurrentTopic('');
     setPrefillTopic('');
     setActiveSessionId(null);
+    setExplainMode('normal');
   };
 
   return (
@@ -351,7 +359,7 @@ export default function App() {
 
       {phase === 'graph' && (
         <>
-          {/* Fast mode: full-screen graph */}
+          {/* Graph View: full-screen interactive graph */}
           {mode === 'fast' && (
             <>
               <Graph
@@ -374,6 +382,8 @@ export default function App() {
                   isExpanded={expandedNodes.has(selectedNode.id)}
                   explanationCache={explanationCache}
                   onForkHole={handleForkHole}
+                  explainMode={explainMode}
+                  onExplainModeChange={setExplainMode}
                   onExplanationCached={persistLive}
                   onQuizMe={(node, explanation) => setQuizTarget({ node, explanation, rootTopic: rootLabel })}
                   onAskFollowUp={(node) => { setSelectedNode(null); setFollowUpNode(node); }}
@@ -417,6 +427,8 @@ export default function App() {
                 isExploring={isExploring}
                 onExplore={handleRelatedExplore}
                 explanationCache={explanationCache}
+                explainMode={explainMode}
+                onExplainModeChange={setExplainMode}
                 onQuizMe={(node, explanation) => setQuizTarget({ node, explanation, rootTopic: rootLabel })}
                 onAskFollowUp={(node) => setFollowUpNode(node)}
               />
@@ -479,7 +491,7 @@ export default function App() {
                 </button>
               )}
 
-              {/* Mode toggle */}
+              {/* Mode toggle — always shows current mode, both states visually prominent */}
               <button
                 onClick={handleModeToggle}
                 disabled={isExploring}
@@ -487,10 +499,10 @@ export default function App() {
                   disabled:opacity-40 disabled:cursor-not-allowed
                   ${mode === 'slow'
                     ? 'bg-purple-600/20 border-purple-500/35 text-purple-300 hover:bg-purple-600/30'
-                    : 'border-white/10 text-white/60 hover:text-white hover:bg-white/10'
+                    : 'bg-white/8 border-white/15 text-white/80 hover:bg-white/12 hover:text-white'
                   }`}
               >
-                {mode === 'fast' ? (
+                {mode === 'slow' ? (
                   <>
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -504,7 +516,7 @@ export default function App() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                         d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
-                    Fast Mode
+                    Graph View
                   </>
                 )}
               </button>

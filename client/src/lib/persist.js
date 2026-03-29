@@ -12,6 +12,7 @@ const KEYS = {
   LIVE: 'rabbit-hole-live',
   SESSIONS: 'rabbit-hole-sessions',
   MODE: 'rabbit-hole-mode',
+  EXPLAIN_MODE: 'rabbit-hole-explain-mode',
 };
 
 // ─── Link normalisation ───────────────────────────────────────────────────────
@@ -134,4 +135,16 @@ export function saveMode(mode) {
 
 export function loadMode() {
   return localStorage.getItem(KEYS.MODE) || 'fast';
+}
+
+// ─── Explain depth preference ─────────────────────────────────────────────────
+
+export function saveExplainMode(mode) {
+  try {
+    localStorage.setItem(KEYS.EXPLAIN_MODE, mode);
+  } catch {}
+}
+
+export function loadExplainMode() {
+  return localStorage.getItem(KEYS.EXPLAIN_MODE) || 'normal';
 }

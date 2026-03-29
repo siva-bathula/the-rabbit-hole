@@ -27,7 +27,7 @@ async function findWikipediaArticle(query) {
 }
 
 router.post('/', async (req, res) => {
-  const { nodeLabel, parentContext, rootTopic } = req.body;
+  const { nodeLabel, parentContext, rootTopic, mode } = req.body;
 
   if (!nodeLabel) {
     return res.status(400).json({ error: 'nodeLabel is required' });
@@ -38,7 +38,7 @@ router.post('/', async (req, res) => {
     // Use nodeLabel alone for Wikipedia — appending parentContext causes the
     // search to rank broader/related articles above the specific concept.
     const [data, wikipedia] = await Promise.all([
-      explainNode(nodeLabel, parentContext || '', rootTopic || ''),
+      explainNode(nodeLabel, parentContext || '', rootTopic || '', mode || 'normal'),
       findWikipediaArticle(nodeLabel),
     ]);
 

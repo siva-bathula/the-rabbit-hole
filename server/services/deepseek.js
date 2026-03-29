@@ -169,7 +169,7 @@ function isCodeRootTopic(rootTopic) {
   return CODE_ROOT_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
-export async function explainNode(nodeLabel, parentContext, rootTopic = '') {
+export async function explainNode(nodeLabel, parentContext, rootTopic = '', mode = 'normal') {
   const isRoot = !parentContext || parentContext === nodeLabel;
   const needsCode = isCodeNode(nodeLabel) || isCodeRootTopic(rootTopic);
 
@@ -179,7 +179,12 @@ export async function explainNode(nodeLabel, parentContext, rootTopic = '') {
 
   const learnMoreField = `- "learnMore": an object with "title" (string) and "url" (string) pointing to ONE reputable external resource ??? for example MDN Web Docs for web APIs, official documentation for frameworks/languages, Investopedia for finance terms, Khan Academy for educational topics, or a well-known authoritative site. Only include a URL you are highly confident is real and accurate. Do NOT invent URLs.`;
 
-  const toneInstruction = `Write in the voice of a knowledgeable, warm Indian educator ??? think of a brilliant senior colleague from an IIT or a seasoned professional explaining things over chai. Use natural Indian English: phrases like "basically", "actually", "you see", "only" for emphasis (e.g. "this is used only when???"), and the occasional "isn't it?" or "right?" to keep it conversational. Where it fits naturally, use analogies from everyday Indian life ??? cricket, local markets, traffic, tiffin boxes ??? but never force them. Be direct, confident, and make the reader feel like they are getting the real explanation, not a textbook answer.`;
+  const toneInstruction =
+    mode === 'eli5'
+      ? `Write like you're explaining to a very smart, curious 10-year-old. Use simple everyday words ? absolutely no jargon or technical terms unless you immediately explain them in one fun sentence. Short, punchy sentences. Make it exciting and easy to follow. Use analogies from things a kid in India knows: cricket, school tiffin, Auto-rickshaws, Bollywood, or superheroes. Every explanation should make the reader go "ooh, that makes sense!"`
+      : mode === 'expert'
+      ? `Write for a domain expert who already has strong foundational knowledge. Use precise technical terminology without simplification. Skip basic definitions and introductory context entirely. Focus on mechanisms, edge cases, performance characteristics, design trade-offs, and non-obvious nuances a senior practitioner would find genuinely insightful. Be direct and technically rigorous ? every sentence must add real value.`
+      : `Write in the voice of a knowledgeable, warm Indian educator ? think of a brilliant senior colleague from an IIT or a seasoned professional explaining things over chai. Use natural Indian English: phrases like "basically", "actually", "you see", "only" for emphasis, and the occasional "isn't it?" or "right?" to keep it conversational. Where it fits naturally, use analogies from everyday Indian life ? cricket, local markets, traffic, tiffin boxes ? but never force them. Be direct, confident, and make the reader feel like they are getting the real explanation, not a textbook answer.`;
 
   const systemPrompt = isRoot
     ? SAFETY_GUARDRAIL_BRIEF + `You are a clear, engaging educator. The user is exploring "${nodeLabel}" as their main topic.
@@ -234,10 +239,15 @@ Be precise and specific. Every word should earn its place.`;
   return JSON.parse(response.choices[0].message.content);
 }
 
-export async function deepenNode(nodeLabel, parentContext, rootTopic = '', existingSummary = '') {
+export async function deepenNode(nodeLabel, parentContext, rootTopic = '', existingSummary = '', mode = 'normal') {
   const needsCode = isCodeNode(nodeLabel) || isCodeRootTopic(rootTopic);
 
-  const toneInstruction = `Write in the voice of a knowledgeable, warm Indian educator ? direct, confident, conversational. Use natural Indian English phrases like "basically", "actually", "you see", "only" for emphasis, and the occasional "isn't it?" or "right?". Use analogies from everyday Indian life where they fit naturally.`;
+  const toneInstruction =
+    mode === 'eli5'
+      ? `Still writing for a curious 10-year-old, but now revealing the cool hidden stuff ? why things are built this way, surprising facts, and "wow, really?!" moments. Keep using simple words and fun analogies. No jargon.`
+      : mode === 'expert'
+      ? `Write for a deep domain expert. Advanced implementation details, subtle failure modes, performance nuances, and expert-level gotchas only. Technical precision above all ? no hand-holding.`
+      : `Write in the voice of a knowledgeable, warm Indian educator ? direct, confident, conversational. Use natural Indian English phrases like "basically", "actually", "you see", "only" for emphasis, and the occasional "isn't it?" or "right?". Use analogies from everyday Indian life where they fit naturally.`;
 
   const codeField = needsCode
     ? `- "code": a DIFFERENT, more advanced code example string (not a repeat of any basics already shown). Demonstrate an edge case, optimisation, or real-world pattern. No markdown fences.`
