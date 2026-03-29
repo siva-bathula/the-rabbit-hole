@@ -52,7 +52,9 @@ router.post('/', async (req, res) => {
 
     res.json({ id });
   } catch (err) {
-    console.error('[share POST]', err.message);
+    console.error('[share POST] error:', err.message);
+    console.error('[share POST] code:', err.code);
+    console.error('[share POST] stack:', err.stack);
     res.status(500).json({ error: 'Failed to save shared graph' });
   }
 });
@@ -83,7 +85,9 @@ router.get('/:id', async (req, res) => {
       originalPosition: data.originalPosition,
     });
   } catch (err) {
-    console.error('[share GET]', err.message);
+    console.error('[share GET] error:', err.message);
+    console.error('[share GET] code:', err.code);
+    console.error('[share GET] stack:', err.stack);
     res.status(500).json({ error: 'Failed to load shared graph' });
   }
 });
