@@ -148,6 +148,13 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
               <div className="w-10 h-1 rounded-full bg-white/20" />
             </div>
 
+            {/* Branch-out progress bar */}
+            {isExpanding && (
+              <div className="w-full h-1 bg-white/10 overflow-hidden flex-shrink-0">
+                <div className="h-full bg-purple-400 animate-progress-indeterminate" />
+              </div>
+            )}
+
             {/* Header */}
             <div className="px-6 pt-3 pb-4 border-b border-white/10 flex-shrink-0">
               <div className="flex items-start justify-between">

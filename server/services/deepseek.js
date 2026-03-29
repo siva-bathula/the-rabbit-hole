@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const client = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY,
@@ -6,6 +7,10 @@ const client = new OpenAI({
 });
 
 const MODEL = 'deepseek-chat';
+
+const geminiClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const GEMINI_MODEL = 'gemini-2.5-flash-lite';
+const GEMINI_MODEL_PRO = 'gemini-2.5-pro';
 
 // Full guardrail ? used on user-facing free-text inputs (main search, follow-up)
 const SAFETY_GUARDRAIL = `You are a safe, responsible, and ethical AI assistant.
@@ -63,45 +68,43 @@ const SAFETY_GUARDRAIL_BRIEF = `Safety rule: If the topic involves weapons, self
 `;
 
 export async function generateNodes(topic) {
-  const response = await client.chat.completions.create({
-    model: MODEL,
-    messages: [
-      {
-        role: 'system',
-        content: SAFETY_GUARDRAIL + `You are a knowledge graph generator. The user may provide a question or a plain topic ??? either way, extract the core concept and build a knowledge graph around it.
+  const t0 = Date.now();
+
+  const systemInstruction = SAFETY_GUARDRAIL + `You are a knowledge graph generator. The user may provide a question or a plain topic ? either way, extract the core concept and build a knowledge graph around it.
 
 Return ONLY a JSON object with exactly these fields:
 - "nodes": array of objects, each with { "id": string, "label": string, "group": string }
 - "edges": array of objects, each with { "source": string, "target": string }
 
-CRITICAL RULES ??? you must follow these exactly:
+CRITICAL RULES ? you must follow these exactly:
 1. The root node MUST have id exactly equal to the string "root" (not any other value).
-2. The root node label MUST be the full learning subject ??? include the concept AND any relevant language, domain, or context from the user's input (e.g. "BIT in JavaScript", "Macroeconomics Basics", "Roman Empire History"). Keep it concise (2-6 words). Do NOT copy the full question verbatim.
+2. The root node label MUST be the full learning subject ? include the concept AND any relevant language, domain, or context from the user's input (e.g. "BIT in JavaScript", "Macroeconomics Basics", "Roman Empire History"). Keep it concise (2-6 words). Do NOT copy the full question verbatim.
 3. All child nodes must have unique IDs like "node_1", "node_2", etc.
 4. Every child node MUST have an edge with source "root" pointing to it. No child node should be left unconnected.
 5. Generate 8-12 child nodes total.
 6. Groups can be: "core", "application", "history", "theory", "impact", "related"
-7. Child node labels should be concise (1-4 words max).`,
-      },
-      {
-        role: 'user',
-        content: `Topic: ${topic}`,
-      },
-    ],
-    response_format: { type: 'json_object' },
-    temperature: 0.7,
+7. Child node labels should be concise (1-4 words max).`;
+
+  const model = geminiClient.getGenerativeModel({
+    model: GEMINI_MODEL,
+    systemInstruction,
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.5,
+    },
   });
 
-  return JSON.parse(response.choices[0].message.content);
+  const result = await model.generateContent(`Topic: ${topic}`);
+  const text = result.response.text();
+
+  console.log(`[generateNodes] "${topic}" ? ${Date.now() - t0}ms`);
+  return JSON.parse(text);
 }
 
 export async function expandNode(nodeId, nodeLabel, parentContext, existingLabels) {
-  const response = await client.chat.completions.create({
-    model: MODEL,
-    messages: [
-      {
-        role: 'system',
-        content: SAFETY_GUARDRAIL_BRIEF + `You are a knowledge graph expander. Given a concept, generate 5-7 deeper, more specific subtopics or related concepts.
+  const t0 = Date.now();
+
+  const systemInstruction = SAFETY_GUARDRAIL_BRIEF + `You are a knowledge graph expander. Given a concept, generate 5-7 deeper, more specific subtopics or related concepts.
 
 Return ONLY a JSON object with exactly these fields:
 - "nodes": array of objects, each with { "id": string, "label": string, "group": string }
@@ -114,20 +117,23 @@ Rules:
 4. Groups can be: "core", "application", "history", "theory", "impact", "related", "example", "mechanism"
 5. DO NOT repeat any concepts already in the graph
 6. Go deeper and more specific than the parent concept
-7. Labels should be concise (1-4 words max)`,
-      },
-      {
-        role: 'user',
-        content: `Concept to expand: "${nodeLabel}"
-Context/parent topic: ${parentContext}
-Already in graph (do not repeat): ${existingLabels.join(', ')}`,
-      },
-    ],
-    response_format: { type: 'json_object' },
-    temperature: 0.8,
+7. Labels should be concise (1-4 words max)`;
+
+  const model = geminiClient.getGenerativeModel({
+    model: GEMINI_MODEL,
+    systemInstruction,
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.5,
+    },
   });
 
-  const data = JSON.parse(response.choices[0].message.content);
+  const result = await model.generateContent(
+    `Concept to expand: "${nodeLabel}"\nContext/parent topic: ${parentContext}\nAlready in graph (do not repeat): ${existingLabels.join(', ')}`
+  );
+
+  console.log(`[expandNode] "${nodeLabel}" ? ${Date.now() - t0}ms`);
+  const data = JSON.parse(result.response.text());
 
   // Namespace all new node IDs to avoid collisions
   const prefix = nodeId.replace(/[^a-zA-Z0-9]/g, '_');
@@ -290,6 +296,7 @@ Be precise. Every sentence must earn its place. No filler.`;
 }
 
 export async function generateQuiz(nodeLabel, explanation) {
+  const t0 = Date.now();
   const { summary = '', details = [], keyTakeaway = '' } = explanation;
 
   const contentBlock = [
@@ -298,12 +305,7 @@ export async function generateQuiz(nodeLabel, explanation) {
     keyTakeaway ? `Key takeaway: ${keyTakeaway}` : '',
   ].filter(Boolean).join('\n\n');
 
-  const response = await client.chat.completions.create({
-    model: MODEL,
-    messages: [
-      {
-        role: 'system',
-        content: `${SAFETY_GUARDRAIL_BRIEF}You are an expert educator creating a short quiz to test understanding of a concept.
+  const systemInstruction = `${SAFETY_GUARDRAIL_BRIEF}You are an expert educator creating a short quiz to test understanding of a concept.
 
 Generate exactly 5 multiple-choice questions based on the content provided. Each question should test a distinct aspect of the topic.
 
@@ -316,18 +318,23 @@ Rules:
 - Vary difficulty: 2 easy, 2 medium, 1 harder
 - Write in the same warm Indian educator tone
 
-Return ONLY a JSON object: { "questions": [ { "question": "...", "options": ["...", "...", "...", "..."], "correct": 0, "explanation": "..." } ] }`,
-      },
-      {
-        role: 'user',
-        content: `Topic: "${nodeLabel}"\n\n${contentBlock}\n\nGenerate 5 quiz questions on this.`,
-      },
-    ],
-    response_format: { type: 'json_object' },
-    temperature: 0.7,
+Return ONLY a JSON object: { "questions": [ { "question": "...", "options": ["...", "...", "...", "..."], "correct": 0, "explanation": "..." } ] }`;
+
+  const model = geminiClient.getGenerativeModel({
+    model: GEMINI_MODEL,
+    systemInstruction,
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.7,
+    },
   });
 
-  const data = JSON.parse(response.choices[0].message.content);
+  const result = await model.generateContent(
+    `Topic: "${nodeLabel}"\n\n${contentBlock}\n\nGenerate 5 quiz questions on this.`
+  );
+
+  console.log(`[generateQuiz] "${nodeLabel}" ? ${Date.now() - t0}ms`);
+  const data = JSON.parse(result.response.text());
   if (!Array.isArray(data.questions) || data.questions.length === 0) {
     throw new Error('Invalid quiz response from AI');
   }

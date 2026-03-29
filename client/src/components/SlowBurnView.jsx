@@ -566,6 +566,13 @@ export default function SlowBurnView({
             </button>
           )}
 
+          {/* Branch-out progress bar */}
+          {isExpanding && (
+            <div className="w-full h-1 bg-white/10 overflow-hidden rounded-full mb-2">
+              <div className="h-full bg-purple-400 animate-progress-indeterminate" />
+            </div>
+          )}
+
           {/* Bottom row: progress + back | depth actions + next */}
           <div className="flex items-center justify-between gap-4">
           {/* Left: progress + back */}

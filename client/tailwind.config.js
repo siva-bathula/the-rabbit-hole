@@ -5,7 +5,18 @@ export default {
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      keyframes: {
+        'progress-indeterminate': {
+          '0%':   { transform: 'translateX(-100%) scaleX(0.4)' },
+          '40%':  { transform: 'translateX(0%)   scaleX(0.6)' },
+          '100%': { transform: 'translateX(100%) scaleX(0.4)' },
+        },
+      },
+      animation: {
+        'progress-indeterminate': 'progress-indeterminate 1.4s ease-in-out infinite',
+      },
+    },
   },
   plugins: [],
 }
