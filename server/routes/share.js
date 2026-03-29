@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { Firestore } from '@google-cloud/firestore';
+import { Firestore, Timestamp } from '@google-cloud/firestore';
 
 const router = Router();
 
@@ -47,7 +47,7 @@ router.post('/', async (req, res) => {
       expandedNodes: expandedNodes || [],
       parentLabelOf: parentLabelOf || [],
       originalPosition: originalPosition || [],
-      createdAt: Firestore.Timestamp.now(),
+      createdAt: Timestamp.now(),
     });
 
     res.json({ id });
