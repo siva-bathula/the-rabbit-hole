@@ -28,22 +28,30 @@ function makeId(len = 8) {
 }
 
 // POST /api/share
-// Body: { topic, graphData, rootLabel, expandedNodes, parentLabelOf, originalPosition }
+// Body: { id?, topic, graphData, rootLabel, expandedNodes, parentLabelOf, originalPosition }
+// If id is provided, upserts that document (stable link). Otherwise creates a new one.
 // Returns: { id }
 router.post('/', async (req, res) => {
-  const { topic, graphData, rootLabel, expandedNodes, parentLabelOf, originalPosition } = req.body;
+  const { id: existingId, topic, graphData, rootLabel, expandedNodes, parentLabelOf, originalPosition } = req.body;
 
   if (!graphData?.nodes?.length) {
     return res.status(400).json({ error: 'graphData with nodes is required' });
   }
 
+  if (existingId && !/^[a-z0-9]{8}$/.test(existingId)) {
+    return res.status(400).json({ error: 'Invalid share ID' });
+  }
+
   try {
     const firestore = getDb();
 
-    // Generate a unique ID (retry once on collision — extremely unlikely)
-    let id = makeId();
-    const existing = await firestore.collection(COLLECTION).doc(id).get();
-    if (existing.exists) id = makeId();
+    let id = existingId;
+    if (!id) {
+      // Brand-new share — generate a unique ID (retry once on collision)
+      id = makeId();
+      const existing = await firestore.collection(COLLECTION).doc(id).get();
+      if (existing.exists) id = makeId();
+    }
 
     await firestore.collection(COLLECTION).doc(id).set({
       id,

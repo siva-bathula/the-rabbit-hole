@@ -15,7 +15,7 @@ import {
   serializeShareSnap, deserializeShareSnap,
 } from './lib/persist.js';
 
-function buildSession(topic, mode, snap) {
+function buildSession(topic, mode, snap, shareId = null) {
   const previewNodes = snap.graphData.nodes
     .filter((n) => n.id !== 'root')
     .slice(0, 3)
@@ -28,6 +28,7 @@ function buildSession(topic, mode, snap) {
     createdAt: Date.now(),
     nodeCount: snap.graphData.nodes.length,
     previewNodes,
+    shareId: shareId || null,
     // full restorable state
     graphData: snap.graphData,
     expandedNodes: snap.expandedNodes,
@@ -72,6 +73,7 @@ export default function App() {
   const [quizTarget, setQuizTarget] = useState(null);
 
   // Share graph state
+  const [shareId, setShareId] = useState(null);
   const [isSharing, setIsSharing] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
 
@@ -126,8 +128,8 @@ export default function App() {
     if (!restoredRef.current) return;
     const snap = snapshot();
     if (!snap.graphData.nodes.length) return;
-    saveLive({ snap, topic: currentTopic, mode, activeSessionId });
-  }, [snapshot, currentTopic, mode, activeSessionId]);
+    saveLive({ snap, topic: currentTopic, mode, activeSessionId, shareId });
+  }, [snapshot, currentTopic, mode, activeSessionId, shareId]);
 
   useEffect(() => {
     if (phase === 'graph' && !isExploring) persistLive();
@@ -163,6 +165,7 @@ export default function App() {
       setMode(saved.mode);
       setPhase('graph');
       if (saved.activeSessionId) setActiveSessionId(saved.activeSessionId);
+      if (saved.shareId) setShareId(saved.shareId);
     }
     restoredRef.current = true;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -179,6 +182,7 @@ export default function App() {
       topicOverride ?? currentTopic,
       modeOverride ?? mode,
       snap,
+      shareId,
     );
     setSessions((prev) => {
       // Replace existing session for same activeSessionId if switching back
@@ -193,14 +197,14 @@ export default function App() {
       return [...prev, session];
     });
     return session.id;
-  }, [snapshot, currentTopic, mode, activeSessionId]);
+  }, [snapshot, currentTopic, mode, activeSessionId, shareId]);
 
   // Switch to a saved session (saves current first)
   const switchToSession = useCallback((id) => {
     // Save current live graph back to its own session (only if there is one)
     if (graphData.nodes.length > 0 && activeSessionId) {
       const snap = snapshot();
-      const updated = buildSession(currentTopic, mode, snap);
+      const updated = buildSession(currentTopic, mode, snap, shareId);
       setSessions((prev) =>
         prev.map((s) =>
           s.id === activeSessionId
@@ -227,10 +231,11 @@ export default function App() {
       setMode(target.mode);
       setPhase('graph');
       setActiveSessionId(id);
+      setShareId(target.shareId || null);
       setSessionsOpen(false);
       return prev;
     });
-  }, [snapshot, restore, graphData.nodes.length, currentTopic, mode, activeSessionId]);
+  }, [snapshot, restore, graphData.nodes.length, currentTopic, mode, activeSessionId, shareId]);
 
   const deleteSession = useCallback((id) => {
     setSessions((prev) => prev.filter((s) => s.id !== id));
@@ -242,7 +247,10 @@ export default function App() {
     setIsSharing(true);
     try {
       const snap = snapshot();
-      const body = serializeShareSnap(snap, currentTopic);
+      const body = {
+        ...serializeShareSnap(snap, currentTopic),
+        ...(shareId ? { id: shareId } : {}),
+      };
       const res = await fetch('/api/share', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -250,6 +258,7 @@ export default function App() {
       });
       if (!res.ok) throw new Error('Share failed');
       const { id } = await res.json();
+      setShareId(id);
       const url = `${window.location.origin}/?share=${id}`;
       await navigator.clipboard.writeText(url);
       setShareCopied(true);
@@ -259,13 +268,13 @@ export default function App() {
     } finally {
       setIsSharing(false);
     }
-  }, [snapshot, currentTopic, isSharing]);
+  }, [snapshot, currentTopic, shareId, isSharing]);
 
   // "Open in new exploration" from NodeOverlay — saves current, goes to search pre-filled
   const handleForkHole = useCallback((nodeTopic) => {
     if (graphData.nodes.length > 0) {
       const snap = snapshot();
-      const session = buildSession(currentTopic, mode, snap);
+      const session = buildSession(currentTopic, mode, snap, shareId);
       setSessions((prev) => {
         if (activeSessionId) {
           const exists = prev.some((s) => s.id === activeSessionId);
@@ -284,7 +293,8 @@ export default function App() {
     setPhase('search');
     setCurrentTopic('');
     setActiveSessionId(null);
-  }, [snapshot, graphData.nodes.length, currentTopic, mode, activeSessionId, reset, setSelectedNode]);
+    setShareId(null);
+  }, [snapshot, graphData.nodes.length, currentTopic, mode, activeSessionId, shareId, reset, setSelectedNode]);
 
   // Submit from the follow-up modal: save current session, start new exploration in-place
   const handleFollowUpSubmit = useCallback(
@@ -294,7 +304,7 @@ export default function App() {
       // Save current graph before wiping it
       if (graphData.nodes.length > 0) {
         const snap = snapshot();
-        const session = buildSession(currentTopic, mode, snap);
+        const session = buildSession(currentTopic, mode, snap, shareId);
         setSessions((prev) => {
           if (activeSessionId) {
             const exists = prev.some((s) => s.id === activeSessionId);
@@ -310,10 +320,11 @@ export default function App() {
       saveToHistory(topic);
       setCurrentTopic(topic);
       setActiveSessionId(null);
+      setShareId(null);
       await explore(topic);
       // Stay on graph phase — no navigation needed
     },
-    [snapshot, graphData.nodes.length, currentTopic, mode, activeSessionId, explore, saveToHistory, setSelectedNode],
+    [snapshot, graphData.nodes.length, currentTopic, mode, activeSessionId, shareId, explore, saveToHistory, setSelectedNode],
   );
 
   const handleSearch = useCallback(
@@ -370,7 +381,7 @@ export default function App() {
     // Save live graph before going home
     if (graphData.nodes.length > 0) {
       const snap = snapshot();
-      const session = buildSession(currentTopic, mode, snap);
+      const session = buildSession(currentTopic, mode, snap, shareId);
       setSessions((prev) => {
         if (activeSessionId) {
           const exists = prev.some((s) => s.id === activeSessionId);
@@ -389,6 +400,7 @@ export default function App() {
     setCurrentTopic('');
     setPrefillTopic('');
     setActiveSessionId(null);
+    setShareId(null);
     setExplainMode('normal');
   };
 
