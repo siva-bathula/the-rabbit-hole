@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import SearchBar from './components/SearchBar.jsx';
+import SearchBar, { getRandomN, STATIC_TOPICS } from './components/SearchBar.jsx';
 import Graph from './components/Graph.jsx';
 import NodeOverlay from './components/NodeOverlay.jsx';
 import SlowBurnView from './components/SlowBurnView.jsx';
@@ -44,6 +44,10 @@ function buildSession(topic, mode, snap, shareId = null) {
 export default function App() {
   const [phase, setPhase] = useState('search'); // 'search' | 'graph'
   const [currentTopic, setCurrentTopic] = useState('');
+
+  // Static topic picks — refreshed each time the user navigates to the search screen.
+  // Held here (not inside SearchBar) so StrictMode double-mount doesn't reshuffle them.
+  const [staticPicks, setStaticPicks] = useState(() => getRandomN(STATIC_TOPICS, 4));
 
   // Mode — initialised from localStorage (#4)
   const [mode, setMode] = useState(() => loadMode());
@@ -294,6 +298,7 @@ export default function App() {
     setPrefillTopic(nodeTopic);
     reset();
     setPhase('search');
+    setStaticPicks(getRandomN(STATIC_TOPICS, 4));
     setCurrentTopic('');
     setActiveSessionId(null);
     setShareId(null);
@@ -403,6 +408,7 @@ export default function App() {
     clearLive(); // user explicitly left — don't auto-restore this graph
     reset();
     setPhase('search');
+    setStaticPicks(getRandomN(STATIC_TOPICS, 4));
     setCurrentTopic('');
     setPrefillTopic('');
     setActiveSessionId(null);
@@ -423,6 +429,7 @@ export default function App() {
           activeSessionId={activeSessionId}
           onSwitchSession={switchToSession}
           prefillTopic={prefillTopic}
+          staticPicks={staticPicks}
         />
       )}
 

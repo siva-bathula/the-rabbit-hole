@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 
-function getRandomN(arr, n) {
+export function getRandomN(arr, n) {
   // Handle cases where n is greater than the array length
   const size = n > arr.length ? arr.length : n;
   
@@ -16,7 +16,7 @@ function getRandomN(arr, n) {
   return shuffled.slice(-size);
 }
 
-const STATIC_TOPICS = [
+export const STATIC_TOPICS = [
   'Macroeconomics',
   'Quantum Mechanics',
   'Artificial Intelligence',
@@ -47,9 +47,7 @@ const STATIC_TOPICS = [
   'Supply Chain Economics'
 ];
 
-export default function SearchBar({ onSearch, isLoading, mode, onModeChange, recentTopics, sessions = [], activeSessionId, onSwitchSession, prefillTopic = '' }) {
-  // Re-randomised every time the search screen mounts (component unmounts on graph navigate)
-  const [staticPicks] = useState(() => getRandomN(STATIC_TOPICS, 4));
+export default function SearchBar({ onSearch, isLoading, mode, onModeChange, recentTopics, sessions = [], activeSessionId, onSwitchSession, prefillTopic = '', staticPicks = [] }) {
   const [topic, setTopic] = useState(prefillTopic);
   const [submittedTopic, setSubmittedTopic] = useState('');
   const [placeholder, setPlaceholder] = useState('');
