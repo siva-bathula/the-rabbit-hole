@@ -47,11 +47,14 @@ const allowedOrigins = IS_DEV
 app.use(
   cors({
     origin: (origin, cb) => {
-      // Requests with no Origin header (same-origin browser nav, curl, etc.)
-      // are not cross-origin CORS requests — let them through.
+      // No Origin header → same-origin browser nav or non-browser client → allow.
       if (!origin) return cb(null, true);
+      // Localhost is always safe — external clients cannot spoof it.
+      if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return cb(null, true);
       if (allowedOrigins.has(origin)) return cb(null, true);
-      cb(Object.assign(new Error('CORS: origin not allowed'), { status: 403 }));
+      // Return a plain false (not an Error) so cors sends a 403 quietly
+      // without bubbling an unhandled error through Express.
+      cb(null, false);
     },
     credentials: false,
   })
