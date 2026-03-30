@@ -33,16 +33,33 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, rec
     }
   }, [prefillTopic]);
 
-  // Fetch server-warmed trending topics once on mount
+  // Fetch server-warmed trending topics on mount; retry up to 3 times if cache is still warming
   useEffect(() => {
-    fetch('/api/trending')
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data.topics) && data.topics.length > 0) {
-          setTrendingTopics(data.topics);
-        }
-      })
-      .catch(() => {});
+    let attempts = 0;
+    let timerId;
+
+    const load = () => {
+      fetch('/api/trending', { cache: 'no-store' })
+        .then((r) => r.json())
+        .then((data) => {
+          if (Array.isArray(data.topics) && data.topics.length > 0) {
+            setTrendingTopics(data.topics);
+          } else if (attempts < 3) {
+            // Cache still warming — retry with back-off (5s, 10s, 20s)
+            attempts += 1;
+            timerId = setTimeout(load, 5000 * attempts);
+          }
+        })
+        .catch(() => {
+          if (attempts < 3) {
+            attempts += 1;
+            timerId = setTimeout(load, 5000 * attempts);
+          }
+        });
+    };
+
+    load();
+    return () => clearTimeout(timerId);
   }, []);
 
   // Cycle through placeholder suggestions with typewriter effect
