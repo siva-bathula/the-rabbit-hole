@@ -10,7 +10,7 @@
       "source": "**",
       "run": {
         "serviceId": "the-rabbit-hole",
-        "region": "asia-south2" 
+        "region": "asia-south1" 
       }
     }]
   }
