@@ -80,6 +80,16 @@ app.use('/api/quiz', quizRouter);
 app.use('/api/share', shareRouter);
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
 
+// Block well-known vulnerability scanner paths before they hit the SPA fallback.
+// Without this every path returns 200 (React HTML), which tells bots the server
+// is "interesting". A 404 here makes the server look boring and reduces noise.
+const SCANNER_RE = /\.(php|asp|aspx|jsp|cgi|env|git|sql|bak|log|cfg|ini|xml|yaml|yml|sh|bash)$|\/wp-|\/wordpress|\/phpinfo|\/xmlrpc|\/\.env|\/admin\/|\/phpmyadmin|\/cgi-bin/i;
+
+app.use((req, res, next) => {
+  if (SCANNER_RE.test(req.path)) return res.status(404).end();
+  next();
+});
+
 // Serve the React build in production
 if (!IS_DEV) {
   const staticPath = path.join(__dirname, 'public');
