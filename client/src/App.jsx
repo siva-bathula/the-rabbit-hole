@@ -424,7 +424,6 @@ export default function App() {
           isLoading={isExploring}
           mode={mode}
           onModeChange={setMode}
-          recentTopics={searchHistory}
           sessions={sessions}
           activeSessionId={activeSessionId}
           onSwitchSession={switchToSession}
