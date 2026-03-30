@@ -83,21 +83,21 @@ async function distilTopics(headlines) {
     messages: [
       {
         role: 'system',
-        content: `You are a knowledge curator for an Indian audience. 
-You will receive a list of recent news headlines. From them, pick or distil exactly 4 concise topic labels (1-4 words each) that would make great knowledge graph explorations.
+        content: `You are a knowledge curator for an Indian audience.
+You will receive a list of recent news headlines. From them, pick exactly 4 that would make great knowledge graph explorations and pair each with a concise topic label.
 
 Rules:
 - Topics must celebrate or inform about India — its achievements, culture, economy, science, history, sports, technology, space, arts, and people
 - Prefer uplifting, educational, or aspirational topics over conflict or controversy
 - STRICTLY AVOID any topic that is anti-Indian, politically divisive, religiously sensitive, or paints India in a negative light
 - STRICTLY AVOID geopolitical conflicts, border disputes, war, terrorism, communal tensions, or any topic that could be seen as controversial within India
-- Labels must be short, positive, and search-friendly
-- Avoid full sentences — keep it to a short noun phrase
-- Return ONLY a JSON object: { "topics": ["...", "...", "...", "..."] }`,
+- The "label" must be a concise search-friendly noun phrase (2-5 words) that captures the specific news angle — NOT a generic category
+- The "headline" must be the exact original headline (or very close) that inspired the topic
+- Return ONLY a JSON object: { "topics": [ { "label": "...", "headline": "..." }, ... ] }`,
       },
       {
         role: 'user',
-        content: `Here are today's top headlines from Google News India:\n\n${headlines.map((h, i) => `${i + 1}. ${h}`).join('\n')}\n\nDistil 4 topic labels from these.`,
+        content: `Here are today's top headlines:\n\n${headlines.map((h, i) => `${i + 1}. ${h}`).join('\n')}\n\nPick 4 and return {label, headline} pairs.`,
       },
     ],
     response_format: { type: 'json_object' },
@@ -108,7 +108,10 @@ Rules:
   if (!Array.isArray(data.topics) || data.topics.length === 0) {
     throw new Error('Invalid topics response from AI');
   }
-  return data.topics.slice(0, 4);
+  // Accept both old (string) and new ({label,headline}) formats gracefully
+  return data.topics.slice(0, 4).map((t) =>
+    typeof t === 'string' ? { label: t, headline: t } : { label: t.label, headline: t.headline || t.label }
+  );
 }
 
 const REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes

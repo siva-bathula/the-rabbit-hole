@@ -328,11 +328,14 @@ export default function App() {
   );
 
   const handleSearch = useCallback(
-    async (topic) => {
-      saveToHistory(topic);
+    async (input) => {
+      // Accept either a plain string or {query, displayLabel} from trending chips
+      const displayLabel = typeof input === 'string' ? input : input.displayLabel;
+      const query = typeof input === 'string' ? input : input.query;
+      saveToHistory(displayLabel);
       setPrefillTopic('');
-      setCurrentTopic(topic);
-      await explore(topic);
+      setCurrentTopic(displayLabel);
+      await explore(query);
       setPhase('graph');
       setActiveSessionId(null);
     },

@@ -291,21 +291,27 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, rec
                       <span>🔥</span> Trending
                     </p>
                     <div className="flex flex-wrap justify-center gap-2">
-                      {trendingTopics.map((s) => (
-                        <button
-                          key={s}
-                          onClick={() => handleSuggestionSearch(s)}
-                          className="px-3 py-1.5 rounded-full text-xs font-medium transition-all
-                            text-orange-200/80 hover:text-white
-                            hover:bg-orange-500/20 hover:border-orange-400/40"
-                          style={{
-                            background: 'rgba(251,146,60,0.10)',
-                            border: '1px solid rgba(251,146,60,0.25)',
-                          }}
-                        >
-                          {s}
-                        </button>
-                      ))}
+                      {trendingTopics.map((t) => {
+                        // Support both old string format and new {label, headline} format
+                        const label = typeof t === 'string' ? t : t.label;
+                        const headline = typeof t === 'string' ? t : (t.headline || t.label);
+                        return (
+                          <button
+                            key={label}
+                            onClick={() => onSearch({ query: `${label} — ${headline}`, displayLabel: label })}
+                            title={headline}
+                            className="px-3 py-1.5 rounded-full text-xs font-medium transition-all
+                              text-orange-200/80 hover:text-white
+                              hover:bg-orange-500/20 hover:border-orange-400/40"
+                            style={{
+                              background: 'rgba(251,146,60,0.10)',
+                              border: '1px solid rgba(251,146,60,0.25)',
+                            }}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
