@@ -22,6 +22,41 @@ const PORT = process.env.PORT || 4000;
 app.set('trust proxy', 1);
 const IS_DEV = process.env.NODE_ENV !== 'production';
 
+// ── Security headers (every response) ────────────────────────────────────────
+// Prevent the app from being embedded in any iframe (clickjacking protection).
+app.use((_, res, next) => {
+  res.set('X-Frame-Options', 'DENY');
+  res.set('Content-Security-Policy', "frame-ancestors 'none'");
+  next();
+});
+
+// ── CORS ─────────────────────────────────────────────────────────────────────
+// Dev: allow the Vite dev server.
+// Production: allow only our own domain(s), configured via ALLOWED_ORIGINS env
+// var (comma-separated). Defaults to rabbitholeorg.org. Any other origin is
+// rejected — this blocks third-party sites from calling our API via the browser.
+const allowedOrigins = IS_DEV
+  ? new Set(['http://localhost:3000'])
+  : new Set(
+      (process.env.ALLOWED_ORIGINS || 'https://rabbitholeorg.org')
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean)
+    );
+
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // Requests with no Origin header (same-origin browser nav, curl, etc.)
+      // are not cross-origin CORS requests — let them through.
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.has(origin)) return cb(null, true);
+      cb(Object.assign(new Error('CORS: origin not allowed'), { status: 403 }));
+    },
+    credentials: false,
+  })
+);
+
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 20,
@@ -29,12 +64,6 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many requests — please wait a minute before trying again.' },
 });
-
-// In dev the Vite dev server runs separately, so allow cross-origin.
-// In production, the React build is served from the same origin — no CORS needed.
-if (IS_DEV) {
-  app.use(cors({ origin: 'http://localhost:3000' }));
-}
 
 app.use(express.json());
 app.use('/api', apiLimiter);
