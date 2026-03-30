@@ -174,13 +174,19 @@ export function useSlowBurn({ graphData, expandedNodes, expand, expandingNodeId 
       : null;
 
   // Navigation state flags
-  const isAtEnd =
+  // Check that every node in the current queue has been visited before declaring done —
+  // prevents "All explored" from firing when the user jumps directly to the last node.
+  const allInQueueVisited =
     state.slowQueue.length > 0 &&
+    state.slowQueue.every((id) => state.visitedIds.has(id));
+
+  const isAtEnd =
+    allInQueueVisited &&
     state.slowIndex === state.slowQueue.length - 1 &&
     state.levelStack.length === 0;
 
   const isLevelComplete =
-    state.slowQueue.length > 0 &&
+    allInQueueVisited &&
     state.slowIndex === state.slowQueue.length - 1 &&
     state.levelStack.length > 0;
 
