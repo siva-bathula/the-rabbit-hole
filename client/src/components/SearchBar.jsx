@@ -1,22 +1,55 @@
 import { useState, useRef, useEffect } from 'react';
 
+function getRandomN(arr, n) {
+  // Handle cases where n is greater than the array length
+  const size = n > arr.length ? arr.length : n;
+  
+  // Create a copy to avoid mutating the original array
+  const shuffled = [...arr];
+  
+  // Fisher-Yates Shuffle (partial)
+  for (let i = shuffled.length - 1; i > shuffled.length - 1 - size; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  
+  return shuffled.slice(-size);
+}
+
 const STATIC_TOPICS = [
   'Macroeconomics',
   'Quantum Mechanics',
-  'The Roman Empire',
+  'Artificial Intelligence',
   'Machine Learning',
   'Evolutionary Biology',
   'Philosophy of Mind',
   'Climate Change',
   'Cryptography',
   'Jazz Music',
-  'The Renaissance',
+  'Behavioral Economics',
+  'Black Holes',
+  'The Human Genome',
+  'Nuclear Fusion',
+  'Ancient Indian Philosophy',
+  'Game Theory',
+  'The Internet Protocol',
+  'Renaissance Art',
+  'Stoicism',
+  'Neuroscience of Memory',
+  'The Stock Market',
+  'Blockchain Technology',
+  'The French Revolution',
+  'Linguistics',
+  'Vedic Mathematics',
+  'The Solar System',
+  'Geopolitics',
+  'Classical Mythology',
+  'Supply Chain Economics'
 ];
 
-// 4 static picks shown alongside trending (or all 8 used as fallback)
-const STATIC_PICKS = STATIC_TOPICS.slice(0, 4);
-
 export default function SearchBar({ onSearch, isLoading, mode, onModeChange, recentTopics, sessions = [], activeSessionId, onSwitchSession, prefillTopic = '' }) {
+  // Re-randomised every time the search screen mounts (component unmounts on graph navigate)
+  const [staticPicks] = useState(() => getRandomN(STATIC_TOPICS, 4));
   const [topic, setTopic] = useState(prefillTopic);
   const [submittedTopic, setSubmittedTopic] = useState('');
   const [placeholder, setPlaceholder] = useState('');
@@ -246,7 +279,7 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, rec
                   Continue exploring
                 </p>
                 <div className="flex gap-2 overflow-x-auto pb-1 justify-center flex-wrap">
-                  {sessions.map((s) => {
+                  {[...sessions].sort((a, b) => (b.lastUsedAt ?? b.createdAt ?? 0) - (a.lastUsedAt ?? a.createdAt ?? 0)).map((s) => {
                     const isActive = s.id === activeSessionId;
                     return (
                       <button
@@ -336,7 +369,7 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, rec
                   <div>
                     <p className="text-white/20 text-xs mb-2 uppercase tracking-widest">Popular</p>
                     <div className="flex flex-wrap justify-center gap-2">
-                      {STATIC_PICKS.map((s) => (
+                      {staticPicks.map((s) => (
                         <button
                           key={s}
                           onClick={() => handleSuggestionClick(s)}
@@ -356,7 +389,7 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, rec
                 <div>
                   <p className="text-white/20 text-xs mb-2 uppercase tracking-widest">Explore</p>
                   <div className="flex flex-wrap justify-center gap-2">
-                    {STATIC_TOPICS.slice(0, 8).map((s) => (
+                    {getRandomN(STATIC_TOPICS, 8).map((s) => (
                       <button
                         key={s}
                         onClick={() => handleSuggestionClick(s)}

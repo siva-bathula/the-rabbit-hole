@@ -20,12 +20,14 @@ function buildSession(topic, mode, snap, shareId = null) {
     .filter((n) => n.id !== 'root')
     .slice(0, 3)
     .map((n) => n.label);
+  const now = Date.now();
   return {
     id: crypto.randomUUID(),
     topic,
     rootLabel: snap.rootLabel,
     mode,
-    createdAt: Date.now(),
+    createdAt: now,
+    lastUsedAt: now,
     nodeCount: snap.graphData.nodes.length,
     previewNodes,
     shareId: shareId || null,
@@ -233,7 +235,8 @@ export default function App() {
       setActiveSessionId(id);
       setShareId(target.shareId || null);
       setSessionsOpen(false);
-      return prev;
+      // Bump lastUsedAt so the list stays sorted by most-recently-used
+      return prev.map((s) => s.id === id ? { ...s, lastUsedAt: Date.now() } : s);
     });
   }, [snapshot, restore, graphData.nodes.length, currentTopic, mode, activeSessionId, shareId]);
 

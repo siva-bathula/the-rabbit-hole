@@ -59,7 +59,7 @@ export default function SessionsDrawer({ sessions, activeSessionId, isOpen, onCl
               </p>
             </div>
           ) : (
-            sessions.map((s) => {
+            [...sessions].sort((a, b) => (b.lastUsedAt ?? b.createdAt ?? 0) - (a.lastUsedAt ?? a.createdAt ?? 0)).map((s) => {
               const isActive = s.id === activeSessionId;
               return (
                 <div
