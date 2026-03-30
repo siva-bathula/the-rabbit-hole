@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 
 export function getRandomN(arr, n) {
   // Handle cases where n is greater than the array length
@@ -50,11 +50,11 @@ export const STATIC_TOPICS = [
 export default function SearchBar({ onSearch, isLoading, mode, onModeChange, recentTopics, sessions = [], activeSessionId, onSwitchSession, prefillTopic = '', staticPicks = [] }) {
   const [topic, setTopic] = useState(prefillTopic);
   const [submittedTopic, setSubmittedTopic] = useState('');
-  const [placeholder, setPlaceholder] = useState('');
-  const [suggestionIndex, setSuggestionIndex] = useState(0);
   const [trendingTopics, setTrendingTopics] = useState([]);
   const inputRef = useRef(null);
   const typingRef = useRef(null);
+  // Typewriter uses refs — no state updates during animation so zero extra renders
+  const suggestionIndexRef = useRef(0);
 
   // When a fork pre-fills the topic, sync it into state
   useEffect(() => {
@@ -78,12 +78,14 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, rec
           } else if (attempts < 3) {
             // Cache still warming — retry with back-off (5s, 10s, 20s)
             attempts += 1;
+            if (timerId) clearTimeout(timerId);
             timerId = setTimeout(load, 5000 * attempts);
           }
         })
         .catch(() => {
           if (attempts < 3) {
             attempts += 1;
+            if (timerId) clearTimeout(timerId);
             timerId = setTimeout(load, 5000 * attempts);
           }
         });
@@ -93,29 +95,30 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, rec
     return () => clearTimeout(timerId);
   }, []);
 
-  // Cycle through placeholder suggestions with typewriter effect
+  // Cycle through placeholder suggestions with typewriter effect.
+  // Writes directly to the DOM via inputRef — no React state updates, zero re-renders.
   useEffect(() => {
     let charIndex = 0;
-    let currentSuggestion = STATIC_TOPICS[suggestionIndex];
     let isDeleting = false;
     let pauseCount = 0;
 
     const type = () => {
+      const currentSuggestion = STATIC_TOPICS[suggestionIndexRef.current];
       if (isDeleting) {
-        setPlaceholder(currentSuggestion.slice(0, charIndex));
+        const text = currentSuggestion.slice(0, charIndex);
+        if (inputRef.current) inputRef.current.placeholder = text;
         charIndex--;
         if (charIndex < 0) {
           isDeleting = false;
-          const nextIndex = (suggestionIndex + 1) % STATIC_TOPICS.length;
-          setSuggestionIndex(nextIndex);
-          currentSuggestion = STATIC_TOPICS[nextIndex];
+          suggestionIndexRef.current = (suggestionIndexRef.current + 1) % STATIC_TOPICS.length;
           charIndex = 0;
           typingRef.current = setTimeout(type, 400);
           return;
         }
         typingRef.current = setTimeout(type, 50);
       } else {
-        setPlaceholder(currentSuggestion.slice(0, charIndex));
+        const text = currentSuggestion.slice(0, charIndex);
+        if (inputRef.current) inputRef.current.placeholder = text;
         charIndex++;
         if (charIndex > currentSuggestion.length) {
           pauseCount++;
@@ -132,7 +135,13 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, rec
 
     typingRef.current = setTimeout(type, 600);
     return () => clearTimeout(typingRef.current);
-  }, [suggestionIndex]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Memoised sort — only recomputes when `sessions` reference changes, not on every render
+  const sortedSessions = useMemo(
+    () => [...sessions].sort((a, b) => (b.lastUsedAt ?? b.createdAt ?? 0) - (a.lastUsedAt ?? a.createdAt ?? 0)),
+    [sessions],
+  );
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -232,7 +241,7 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, rec
                 type="text"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                placeholder={placeholder || 'Try anything…'}
+                placeholder="Try anything…"
                 autoFocus
                 className="w-full px-5 py-4 pr-14 rounded-2xl text-white text-base font-medium
                   placeholder-white/25 outline-none transition-all"
@@ -267,7 +276,7 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, rec
             </form>
 
             {/* Active explorations — resume saved sessions */}
-            {sessions.length > 0 && (
+            {sortedSessions.length > 0 && (
               <div className="mt-5">
                 <p className="text-white/20 text-xs mb-2 uppercase tracking-widest flex items-center justify-center gap-1.5">
                   <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -277,7 +286,7 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, rec
                   Continue exploring
                 </p>
                 <div className="flex gap-2 overflow-x-auto pb-1 justify-center flex-wrap">
-                  {[...sessions].sort((a, b) => (b.lastUsedAt ?? b.createdAt ?? 0) - (a.lastUsedAt ?? a.createdAt ?? 0)).map((s) => {
+                  {sortedSessions.map((s) => {
                     const isActive = s.id === activeSessionId;
                     return (
                       <button
@@ -383,11 +392,11 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, rec
                   </div>
                 </>
               ) : (
-                /* Fallback: show 8 static topics while trending cache is warming */
+                /* Fallback: show static picks while trending cache is warming */
                 <div>
                   <p className="text-white/20 text-xs mb-2 uppercase tracking-widest">Explore</p>
                   <div className="flex flex-wrap justify-center gap-2">
-                    {getRandomN(STATIC_TOPICS, 8).map((s) => (
+                    {staticPicks.map((s) => (
                       <button
                         key={s}
                         onClick={() => handleSuggestionClick(s)}

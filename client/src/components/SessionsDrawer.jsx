@@ -1,3 +1,5 @@
+import { useMemo } from 'react';
+
 function timeAgo(ts) {
   const diff = Math.floor((Date.now() - ts) / 1000);
   if (diff < 60) return `${diff}s ago`;
@@ -6,6 +8,11 @@ function timeAgo(ts) {
 }
 
 export default function SessionsDrawer({ sessions, activeSessionId, isOpen, onClose, onSwitch, onDelete }) {
+  const sortedSessions = useMemo(
+    () => [...sessions].sort((a, b) => (b.lastUsedAt ?? b.createdAt ?? 0) - (a.lastUsedAt ?? a.createdAt ?? 0)),
+    [sessions],
+  );
+
   if (!isOpen) return null;
 
   return (
@@ -59,7 +66,7 @@ export default function SessionsDrawer({ sessions, activeSessionId, isOpen, onCl
               </p>
             </div>
           ) : (
-            [...sessions].sort((a, b) => (b.lastUsedAt ?? b.createdAt ?? 0) - (a.lastUsedAt ?? a.createdAt ?? 0)).map((s) => {
+            sortedSessions.map((s) => {
               const isActive = s.id === activeSessionId;
               return (
                 <div
