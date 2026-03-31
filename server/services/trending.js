@@ -32,6 +32,13 @@ let cachedTopics = [];
 let isFetching = false;
 
 const LLM_TIMEOUT_MS = 20000;
+// Defensive ceiling for the entire refresh cycle (RSS fetch + LLM distillation).
+// If anything hangs and never resolves/rejects, this watchdog ensures we recover.
+const FETCH_WATCHDOG_MS = 50000;
+const RSS_RETRY_ON_FAILURE_MS = 5 * 60 * 1000;
+let fetchWatchdogTimer = null;
+let fetchStartedAt = 0;
+let rssRetryTimer = null;
 
 function withTimeout(promise, ms, label = 'operation') {
   return Promise.race([
@@ -61,10 +68,10 @@ async function fetchHeadlines() {
       console.log(`[trending] Fetching headlines from ${type}…`);
       const res = await fetch(url, {
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RabbitHole/1.0)' },
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(20000),
       });
       if (!res.ok) {
-        console.log(`[trending] Failed to fetch from ${type}, status: ${res.status}`);
+        console.error(`[trending] Failed to fetch from ${type}, status: ${res.status}`);
         continue;
       }
 
@@ -84,11 +91,10 @@ async function fetchHeadlines() {
 
       // Require at least 3 valid headlines before accepting this source
       if (headlines.length >= 3) return headlines;
+      console.warn(`[trending] Source ${type} returned only ${headlines.length} valid headlines`);
     } catch (err) {
-      console.log(`[trending] Failed to fetch from ${type}, trying next source…`);
+      console.error(`[trending] Failed to fetch from ${type}, trying next source…`);
       console.error(`[trending] Error fetching from ${type}:`, err);
-    } finally {
-      continue;
     }
   }
   throw new Error('All RSS sources failed');
@@ -139,12 +145,42 @@ Rules:
 const REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
 export async function fetchAndCacheTrending() {
-  if (isFetching) return;
+  // If a previous run got stuck (promise never settled), allow recovery.
+  if (isFetching) {
+    const age = fetchStartedAt ? Date.now() - fetchStartedAt : 0;
+    if (age > FETCH_WATCHDOG_MS) {
+      console.warn('[trending] Watchdog: previous fetch stuck, resetting isFetching');
+      isFetching = false;
+    } else {
+      return;
+    }
+  }
+
   isFetching = true;
+  fetchStartedAt = Date.now();
+  if (fetchWatchdogTimer) clearTimeout(fetchWatchdogTimer);
+  fetchWatchdogTimer = setTimeout(() => {
+    if (isFetching) {
+      console.warn('[trending] Watchdog: fetch timed out, forcing isFetching=false');
+      isFetching = false;
+      fetchStartedAt = 0;
+    }
+  }, FETCH_WATCHDOG_MS);
+  // Don't keep the process alive just for this timer.
+  fetchWatchdogTimer.unref?.();
 
   try {
     console.log('[trending] Fetching RSS headlines…');
-    const headlines = await fetchHeadlines();
+    let headlines = [];
+    try {
+      headlines = await fetchHeadlines();
+    } catch (err) {
+      console.error('[trending] Inner try :: Failed to fetch headlines:', err.message);
+      throw err;
+    }
+    if (!Array.isArray(headlines) || headlines.length === 0) {
+      throw new Error('Invalid headlines payload');
+    }
     console.log(`[trending] Got ${headlines.length} headlines, distilling…`);
     const topics = await distilTopics(headlines);
 
@@ -157,8 +193,26 @@ export async function fetchAndCacheTrending() {
     }
   } catch (err) {
     console.error('[trending] Failed:', err.message);
+    if (err?.message === 'All RSS sources failed') {
+      if (!rssRetryTimer) {
+        console.warn(`[trending] All RSS sources failed — scheduling retry in ${RSS_RETRY_ON_FAILURE_MS / 60000} minutes`);
+        rssRetryTimer = setTimeout(() => {
+          rssRetryTimer = null;
+          fetchAndCacheTrending().catch(() => {});
+        }, RSS_RETRY_ON_FAILURE_MS);
+        // Don't keep the process alive just for this timer.
+        rssRetryTimer.unref?.();
+      } else {
+        console.log('[trending] RSS retry already scheduled, skipping duplicate timer');
+      }
+    }
   } finally {
     isFetching = false;
+    fetchStartedAt = 0;
+    if (fetchWatchdogTimer) {
+      clearTimeout(fetchWatchdogTimer);
+      fetchWatchdogTimer = null;
+    }
   }
 }
 
