@@ -11,13 +11,13 @@ const MODEL = 'deepseek-chat';
 // Indian news RSS feeds — tried in order, first to return ≥3 valid headlines wins
 const RSS_SOURCES = [
   // NDTV top stories
-  'https://feeds.feedburner.com/ndtvnews-top-stories',
+  {url: 'https://feeds.feedburner.com/ndtvnews-top-stories', type: 'ndtv'},
   // India Today
-  'https://www.indiatoday.in/rss/1206578',
+  {url: 'https://www.indiatoday.in/rss/1206578', type: 'indiatoday'},
   // The Hindu - National
-  'https://www.thehindu.com/news/national/?service=rss',
+  {url: 'https://www.thehindu.com/news/national/?service=rss', type: 'thehindu'},
   // Google News India geo (may be geo-blocked on some servers)
-  'https://news.google.com/rss/search?q=india+news&hl=en-IN&gl=IN&ceid=IN:en',
+  {url: 'https://news.google.com/rss/search?q=india+news&hl=en-IN&gl=IN&ceid=IN:en', type: 'googlenews'},
 ];
 
 // Strings that indicate the feed returned an error page rather than real headlines
@@ -30,6 +30,17 @@ const ERROR_STRINGS = [
 
 let cachedTopics = [];
 let isFetching = false;
+
+const LLM_TIMEOUT_MS = 20000;
+
+function withTimeout(promise, ms, label = 'operation') {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
 
 export function getCachedTrending() {
   if (cachedTopics.length === 0 && !isFetching) {
@@ -45,13 +56,17 @@ function cleanTitle(raw) {
 }
 
 async function fetchHeadlines() {
-  for (const url of RSS_SOURCES) {
+  for (const { url, type } of RSS_SOURCES) {
     try {
+      console.log(`[trending] Fetching headlines from ${type}…`);
       const res = await fetch(url, {
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; RabbitHole/1.0)' },
         signal: AbortSignal.timeout(8000),
       });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        console.log(`[trending] Failed to fetch from ${type}, status: ${res.status}`);
+        continue;
+      }
 
       const xml = await res.text();
       const parser = new XMLParser();
@@ -69,7 +84,10 @@ async function fetchHeadlines() {
 
       // Require at least 3 valid headlines before accepting this source
       if (headlines.length >= 3) return headlines;
-    } catch {
+    } catch (err) {
+      console.log(`[trending] Failed to fetch from ${type}, trying next source…`);
+      console.error(`[trending] Error fetching from ${type}:`, err);
+    } finally {
       continue;
     }
   }
@@ -77,13 +95,14 @@ async function fetchHeadlines() {
 }
 
 async function distilTopics(headlines) {
-  console.log('[trending] Distiling topics from headlines:', headlines);
-  const response = await client.chat.completions.create({
-    model: MODEL,
-    messages: [
-      {
-        role: 'system',
-        content: `You are a knowledge curator for an Indian audience.
+  console.log('[trending] Distilling topics from headlines:', headlines);
+  const response = await withTimeout(
+    client.chat.completions.create({
+      model: MODEL,
+      messages: [
+        {
+          role: 'system',
+          content: `You are a knowledge curator for an Indian audience.
 You will receive a list of recent news headlines. From them, pick exactly 4 that would make great knowledge graph explorations and pair each with a concise topic label.
 
 Rules:
@@ -94,15 +113,18 @@ Rules:
 - The "label" must be a concise search-friendly noun phrase (2-5 words) that captures the specific news angle — NOT a generic category
 - The "headline" must be the exact original headline (or very close) that inspired the topic
 - Return ONLY a JSON object: { "topics": [ { "label": "...", "headline": "..." }, ... ] }`,
-      },
-      {
-        role: 'user',
-        content: `Here are today's top headlines:\n\n${headlines.map((h, i) => `${i + 1}. ${h}`).join('\n')}\n\nPick 4 and return {label, headline} pairs.`,
-      },
-    ],
-    response_format: { type: 'json_object' },
-    temperature: 0.7,
-  });
+        },
+        {
+          role: 'user',
+          content: `Here are today's top headlines:\n\n${headlines.map((h, i) => `${i + 1}. ${h}`).join('\n')}\n\nPick 4 and return {label, headline} pairs.`,
+        },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.7,
+    }),
+    LLM_TIMEOUT_MS,
+    'DeepSeek trending topics',
+  );
 
   const data = JSON.parse(response.choices[0].message.content);
   if (!Array.isArray(data.topics) || data.topics.length === 0) {
