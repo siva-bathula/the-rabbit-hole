@@ -4,7 +4,7 @@ import { expandNode } from '../services/deepseek.js';
 const router = Router();
 
 router.post('/', async (req, res) => {
-  const { nodeId, nodeLabel, parentContext, existingLabels } = req.body;
+  const { nodeId, nodeLabel, parentContext, existingLabels, sessionTopic } = req.body;
 
   if (!nodeId || !nodeLabel) {
     return res.status(400).json({ error: 'nodeId and nodeLabel are required' });
@@ -15,7 +15,8 @@ router.post('/', async (req, res) => {
       nodeId,
       nodeLabel,
       parentContext || nodeLabel,
-      existingLabels || []
+      existingLabels || [],
+      sessionTopic || ''
     );
 
     if (!data.nodes || !data.edges) {

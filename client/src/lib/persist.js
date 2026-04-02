@@ -34,6 +34,7 @@ function serializeSnap(snap) {
     },
     expandedNodes: [...snap.expandedNodes],
     rootLabel: snap.rootLabel,
+    sessionTopic: snap.sessionTopic || '',
     parentLabelOf: [...snap.parentLabelOf.entries()],
     originalPosition: [...snap.originalPosition.entries()],
     explanationCache: [...snap.explanationCache.entries()],
@@ -46,6 +47,7 @@ function deserializeSnap(raw) {
     graphData: raw.graphData,
     expandedNodes: new Set(raw.expandedNodes),
     rootLabel: raw.rootLabel,
+    sessionTopic: raw.sessionTopic || '',
     parentLabelOf: new Map(raw.parentLabelOf),
     originalPosition: new Map(raw.originalPosition),
     explanationCache: new Map(raw.explanationCache),
@@ -69,7 +71,9 @@ export function loadLive() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEYS.LIVE) || 'null');
     if (!raw || !raw.graphData?.nodes?.length) return null;
-    return { snap: deserializeSnap(raw), topic: raw.topic, mode: raw.mode, activeSessionId: raw.activeSessionId ?? null, shareId: raw.shareId ?? null };
+    const snap = deserializeSnap(raw);
+    if (!snap.sessionTopic && raw.topic) snap.sessionTopic = raw.topic;
+    return { snap, topic: raw.topic, mode: raw.mode, activeSessionId: raw.activeSessionId ?? null, shareId: raw.shareId ?? null };
   } catch {
     return null;
   }
@@ -146,6 +150,7 @@ export function deserializeShareSnap(raw) {
   return {
     graphData: raw.graphData,
     rootLabel: raw.rootLabel,
+    sessionTopic: raw.topic || '',
     expandedNodes: new Set(raw.expandedNodes),
     parentLabelOf: new Map(raw.parentLabelOf),
     originalPosition: new Map(raw.originalPosition),

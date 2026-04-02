@@ -4,7 +4,7 @@ import { deepenNode } from '../services/deepseek.js';
 const router = Router();
 
 router.post('/', async (req, res) => {
-  const { nodeLabel, parentContext, rootTopic, existingSummary, mode } = req.body;
+  const { nodeLabel, parentContext, rootTopic, existingSummary, mode, sessionTopic } = req.body;
 
   if (!nodeLabel) {
     return res.status(400).json({ error: 'nodeLabel is required' });
@@ -16,7 +16,8 @@ router.post('/', async (req, res) => {
       parentContext || '',
       rootTopic || '',
       existingSummary || '',
-      mode || 'normal'
+      mode || 'normal',
+      sessionTopic || ''
     );
 
     if (!data.advancedInsights?.length) {

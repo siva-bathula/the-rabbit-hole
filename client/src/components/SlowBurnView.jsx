@@ -12,7 +12,7 @@ function modeCacheKey(nodeId, mode) {
   return mode === 'normal' ? nodeId : `${nodeId}::${mode}`;
 }
 
-function useNodeExplanation(node, parentContext, rootLabel, cache, mode = 'normal') {
+function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, cache, mode = 'normal') {
   const [explanation, setExplanation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -51,6 +51,7 @@ function useNodeExplanation(node, parentContext, rootLabel, cache, mode = 'norma
         nodeLabel: node.label,
         parentContext: parentContext || node.label,
         rootTopic: rootLabel || '',
+        sessionTopic: sessionTopic || '',
         mode,
       }),
     })
@@ -74,7 +75,7 @@ function useNodeExplanation(node, parentContext, rootLabel, cache, mode = 'norma
     return () => {
       cancelled = true;
     };
-  }, [node?.id, parentContext, mode]);
+  }, [node?.id, parentContext, rootLabel, sessionTopic, mode]);
 
   const handlePullThread = useCallback(async () => {
     if (!explanation || isPulling) return;
@@ -89,6 +90,7 @@ function useNodeExplanation(node, parentContext, rootLabel, cache, mode = 'norma
           nodeLabel: node.label,
           parentContext: parentContext || node.label,
           rootTopic: rootLabel || '',
+          sessionTopic: sessionTopic || '',
           existingSummary: explanation.summary || '',
           mode,
         }),
@@ -108,13 +110,13 @@ function useNodeExplanation(node, parentContext, rootLabel, cache, mode = 'norma
     } finally {
       setIsPulling(false);
     }
-  }, [explanation, isPulling, node, parentContext, rootLabel, mode, cache]);
+  }, [explanation, isPulling, node, parentContext, rootLabel, sessionTopic, mode, cache]);
 
   return { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread };
 }
 
-function ContentArea({ node, parentContext, rootLabel, cache, onExplore, onQuizMe, explainMode = 'normal', onExplainModeChange }) {
-  const { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread } = useNodeExplanation(node, parentContext, rootLabel, cache, explainMode);
+function ContentArea({ node, parentContext, rootLabel, sessionTopic, cache, onExplore, onQuizMe, explainMode = 'normal', onExplainModeChange }) {
+  const { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread } = useNodeExplanation(node, parentContext, rootLabel, sessionTopic, cache, explainMode);
   const [copied, setCopied] = useState(false);
   const [copiedDeeper, setCopiedDeeper] = useState(false);
 
@@ -427,6 +429,7 @@ export default function SlowBurnView({
   expand,
   expandingNodeId,
   rootLabel,
+  sessionTopic = '',
   isExploring,
   onExplore,
   explanationCache,
@@ -525,6 +528,7 @@ export default function SlowBurnView({
               node={currentNode}
               parentContext={parentContext}
               rootLabel={rootLabel}
+              sessionTopic={sessionTopic}
               cache={explanationCache}
               onExplore={onExplore}
               onQuizMe={onQuizMe}

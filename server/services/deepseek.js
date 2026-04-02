@@ -67,11 +67,49 @@ const SAFETY_GUARDRAIL_BRIEF = `Safety rule: If the topic involves weapons, self
 
 `;
 
+function isNewsAnchoredTopic(topic) {
+  return typeof topic === 'string' && /\s[—–]\s/.test(topic);
+}
+
+/** Extra system + user prompt fragments when the session is a trending "label — headline" story. */
+function newsAnchoredAugmentation(anchorTopic, kind) {
+  if (!isNewsAnchoredTopic(anchorTopic)) {
+    return { systemExtra: '', userPrefix: '' };
+  }
+  const preamble =
+    'TRENDING / NEWS MODE: The session started from a trending story; the user message repeats the full anchor (short label — headline/context). ';
+  const byKind = {
+    expand:
+      'Every new subtopic must clarify or deepen THAT specific news event (facts, actors, implications, what next) — not unrelated generic encyclopedia branches.',
+    explain:
+      'Explain the concept strictly in service of understanding THAT event (what it means in this story, who is affected, why it matters here). Do not turn it into a general textbook treatment detached from the headline.',
+    deepen:
+      'Advanced insights must stay on THIS story angle — non-obvious implications, expert context, second-order effects on the narrative — not a deep dive that drifts away from the headline.',
+  };
+  return {
+    systemExtra: `\n\n${preamble}${byKind[kind]}`,
+    userPrefix: `Stay anchored to this story:\n${anchorTopic}\n\n`,
+  };
+}
+
 export async function generateNodes(topic) {
   const t0 = Date.now();
 
-  const systemInstruction = SAFETY_GUARDRAIL + `You are a knowledge graph generator. The user may provide a question or a plain topic ? either way, extract the core concept and build a knowledge graph around it.
+  const newsAnchored = isNewsAnchoredTopic(topic);
 
+  const newsRules = newsAnchored
+    ? `
+
+TRENDING / NEWS MODE (input contains " — " separating a short label from the full headline or context):
+- Treat the part AFTER the em/en dash as the **specific news event** to explain; the part BEFORE is a short title for the same story.
+- The entire graph must help the user understand **this event**: what happened, who or what is involved, why it matters, timeline or background only as it clarifies the story, and implications — stay anchored to the headline, not a generic encyclopedia article on the broad field.
+- Root label (2-6 words): a clear, specific title for THIS story (you may blend label + headline meaning; do not paste the full headline).
+- Child nodes: angles on THIS story (e.g. key facts, stakeholders, policy or science context, what happens next, related Indian angle if relevant) — NOT unrelated generic subtopics.
+`
+    : '';
+
+  const systemInstruction = SAFETY_GUARDRAIL + `You are a knowledge graph generator. The user may provide a question or a plain topic ? either way, extract the core concept and build a knowledge graph around it.
+${newsRules}
 Return ONLY a JSON object with exactly these fields:
 - "nodes": array of objects, each with { "id": string, "label": string, "group": string }
 - "edges": array of objects, each with { "source": string, "target": string }
@@ -94,17 +132,24 @@ CRITICAL RULES ? you must follow these exactly:
     },
   });
 
-  const result = await model.generateContent(`Topic: ${topic}`);
+  const userPrompt = newsAnchored
+    ? `Trending news exploration ? stay focused on THIS story (label and headline/context):\n${topic}`
+    : `Topic: ${topic}`;
+
+  const result = await model.generateContent(userPrompt);
   const text = result.response.text();
 
   console.log(`[generateNodes] "${topic}" ? ${Date.now() - t0}ms`);
   return JSON.parse(text);
 }
 
-export async function expandNode(nodeId, nodeLabel, parentContext, existingLabels) {
+export async function expandNode(nodeId, nodeLabel, parentContext, existingLabels, sessionTopic = '') {
   const t0 = Date.now();
 
+  const { systemExtra, userPrefix } = newsAnchoredAugmentation(sessionTopic, 'expand');
+
   const systemInstruction = SAFETY_GUARDRAIL_BRIEF + `You are a knowledge graph expander. Given a concept, generate 5-7 deeper, more specific subtopics or related concepts.
+${systemExtra}
 
 Return ONLY a JSON object with exactly these fields:
 - "nodes": array of objects, each with { "id": string, "label": string, "group": string }
@@ -129,7 +174,7 @@ Rules:
   });
 
   const result = await model.generateContent(
-    `Concept to expand: "${nodeLabel}"\nContext/parent topic: ${parentContext}\nAlready in graph (do not repeat): ${existingLabels.join(', ')}`
+    `${userPrefix}Concept to expand: "${nodeLabel}"\nContext/parent topic: ${parentContext}\nAlready in graph (do not repeat): ${existingLabels.join(', ')}`
   );
 
   console.log(`[expandNode] "${nodeLabel}" ? ${Date.now() - t0}ms`);
@@ -175,9 +220,10 @@ function isCodeRootTopic(rootTopic) {
   return CODE_ROOT_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
-export async function explainNode(nodeLabel, parentContext, rootTopic = '', mode = 'normal') {
+export async function explainNode(nodeLabel, parentContext, rootTopic = '', mode = 'normal', sessionTopic = '') {
   const isRoot = !parentContext || parentContext === nodeLabel;
   const needsCode = isCodeNode(nodeLabel) || isCodeRootTopic(rootTopic);
+  const { systemExtra, userPrefix } = newsAnchoredAugmentation(sessionTopic, 'explain');
 
   const codeField = needsCode
     ? `- "code": a working, well-commented code example string demonstrating "${nodeLabel}" (use the language implied by the context, default to JavaScript). Include only the code ??? no markdown fences.`
@@ -194,6 +240,7 @@ export async function explainNode(nodeLabel, parentContext, rootTopic = '', mode
 
   const systemPrompt = isRoot
     ? SAFETY_GUARDRAIL_BRIEF + `You are a clear, engaging educator. The user is exploring "${nodeLabel}" as their main topic.
+${systemExtra}
 
 ${toneInstruction}
 
@@ -208,6 +255,7 @@ ${codeField}
 
 Be specific and concrete. Write like a brilliant friend giving a first orientation to the topic.`
     : SAFETY_GUARDRAIL_BRIEF + `You are a clear, engaging educator. The user is exploring "${nodeLabel}" as a subtopic within "${parentContext}".
+${systemExtra}
 
 ${toneInstruction}
 
@@ -234,8 +282,8 @@ Be precise and specific. Every word should earn its place.`;
       {
         role: 'user',
         content: isRoot
-          ? `Topic: "${nodeLabel}"`
-          : `Subtopic: "${nodeLabel}"\nParent topic: "${parentContext}"`,
+          ? `${userPrefix}Topic: "${nodeLabel}"`
+          : `${userPrefix}Subtopic: "${nodeLabel}"\nParent topic: "${parentContext}"`,
       },
     ],
     response_format: { type: 'json_object' },
@@ -245,8 +293,9 @@ Be precise and specific. Every word should earn its place.`;
   return JSON.parse(response.choices[0].message.content);
 }
 
-export async function deepenNode(nodeLabel, parentContext, rootTopic = '', existingSummary = '', mode = 'normal') {
+export async function deepenNode(nodeLabel, parentContext, rootTopic = '', existingSummary = '', mode = 'normal', sessionTopic = '') {
   const needsCode = isCodeNode(nodeLabel) || isCodeRootTopic(rootTopic);
+  const { systemExtra, userPrefix } = newsAnchoredAugmentation(sessionTopic, 'deepen');
 
   const toneInstruction =
     mode === 'eli5'
@@ -260,6 +309,7 @@ export async function deepenNode(nodeLabel, parentContext, rootTopic = '', exist
     : '';
 
   const systemPrompt = SAFETY_GUARDRAIL_BRIEF + `You are an expert educator giving the advanced masterclass on "${nodeLabel}" within the context of "${parentContext || nodeLabel}".
+${systemExtra}
 
 ${toneInstruction}
 
@@ -285,7 +335,7 @@ Be precise. Every sentence must earn its place. No filler.`;
       { role: 'system', content: systemPrompt },
       {
         role: 'user',
-        content: `Topic: "${nodeLabel}"\nContext: "${parentContext || nodeLabel}"`,
+        content: `${userPrefix}Topic: "${nodeLabel}"\nContext: "${parentContext || nodeLabel}"`,
       },
     ],
     response_format: { type: 'json_object' },

@@ -10,7 +10,7 @@ function modeCacheKey(nodeId, mode) {
   return mode === 'normal' ? nodeId : `${nodeId}::${mode}`;
 }
 
-export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onCollapse, onExplore, isExpanding, isExpanded, explanationCache, onForkHole, onExplanationCached, onAskFollowUp, onQuizMe, explainMode = 'normal', onExplainModeChange }) {
+export default function NodeOverlay({ node, rootTopic, sessionTopic = '', onClose, onExpand, onCollapse, onExplore, isExpanding, isExpanded, explanationCache, onForkHole, onExplanationCached, onAskFollowUp, onQuizMe, explainMode = 'normal', onExplainModeChange }) {
   const [explanation, setExplanation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -58,6 +58,7 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
         nodeLabel: node.label,
         parentContext: rootTopic || node.label,
         rootTopic: rootTopic || '',
+        sessionTopic: sessionTopic || '',
         mode: explainMode,
       }),
     })
@@ -80,7 +81,7 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
       });
 
     return () => { cancelled = true; };
-  }, [node?.id, explainMode]);
+  }, [node?.id, explainMode, rootTopic, sessionTopic]);
 
   const handlePullThread = useCallback(async () => {
     if (!explanation || isPulling) return;
@@ -95,6 +96,7 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
           nodeLabel: node.label,
           parentContext: rootTopic || node.label,
           rootTopic: rootTopic || '',
+          sessionTopic: sessionTopic || '',
           existingSummary: explanation.summary || '',
           mode: explainMode,
         }),
@@ -116,7 +118,7 @@ export default function NodeOverlay({ node, rootTopic, onClose, onExpand, onColl
     } finally {
       setIsPulling(false);
     }
-  }, [explanation, isPulling, node, rootTopic, explainMode, explanationCache]);
+  }, [explanation, isPulling, node, rootTopic, sessionTopic, explainMode, explanationCache]);
 
   if (!node) return null;
 

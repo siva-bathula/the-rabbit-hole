@@ -252,6 +252,7 @@ export default function App() {
         graphData: target.graphData,
         expandedNodes: target.expandedNodes,
         rootLabel: target.rootLabel,
+        sessionTopic: target.topic || '',
         parentLabelOf: target.parentLabelOf,
         originalPosition: target.originalPosition,
         explanationCache: target.explanationCache,
@@ -491,6 +492,7 @@ export default function App() {
                 <NodeOverlay
                   node={selectedNode}
                   rootTopic={rootLabel}
+                  sessionTopic={currentTopic}
                   onClose={() => setSelectedNode(null)}
                   onExpand={handleExpand}
                   onCollapse={handleCollapse}
@@ -541,6 +543,7 @@ export default function App() {
                 expand={expand}
                 expandingNodeId={expandingNodeId}
                 rootLabel={rootLabel}
+                sessionTopic={currentTopic}
                 isExploring={isExploring}
                 onExplore={handleRelatedExplore}
                 explanationCache={explanationCache}

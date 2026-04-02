@@ -109,20 +109,26 @@ async function distilTopics(headlines) {
         {
           role: 'system',
           content: `You are a knowledge curator for an Indian audience.
-You will receive a list of recent news headlines. From them, pick exactly 4 that would make great knowledge graph explorations and pair each with a concise topic label.
+You receive recent news headlines. Pick exactly 4 headlines that users can explore **as the specific story behind the headline** — not as a generic textbook topic.
+
+Primary goal:
+- The user will tap a chip and read a knowledge graph **about this news event**: what happened, who/what is involved, why it matters, background, and sensible next questions — all tied to THAT headline.
+- The "label" is the short chip text; it must sound like a **specific story title** (3–7 words), NOT a broad category (bad: "Indian Aviation Industry", "Space Science"; good: "Artemis II crewed Moon flyby", "Telangana seniors pension bill").
 
 Rules:
-- Topics must celebrate or inform about India — its achievements, culture, economy, science, history, sports, technology, space, arts, and people
-- Prefer uplifting, educational, or aspirational topics over conflict or controversy
-- STRICTLY AVOID any topic that is anti-Indian, politically divisive, religiously sensitive, or paints India in a negative light
-- STRICTLY AVOID geopolitical conflicts, border disputes, war, terrorism, communal tensions, or any topic that could be seen as controversial within India
-- The "label" must be a concise search-friendly noun phrase (2-5 words) that captures the specific news angle — NOT a generic category
-- The "headline" must be the exact original headline (or very close) that inspired the topic
-- Return ONLY a JSON object: { "topics": [ { "label": "...", "headline": "..." }, ... ] }`,
+- Favour India-linked or India-relevant stories when possible (achievements, policy, economy, science, culture, sports, people).
+- Prefer educational, civic, or constructive angles; avoid gratuitous shock or outrage framing.
+- STRICTLY AVOID anti-Indian, hate, or exploitative angles; avoid operational detail that could enable harm.
+- STRICTLY AVOID picking headlines whose exploration would require graphic violence, illegal instructions, or extremist content.
+- The "headline" MUST be copied verbatim from the list (or trivial punctuation fix only).
+- The "label" MUST clearly refer to the same event as its headline — a reader should see they belong together.
+- Do NOT output generic labels that could apply to many unrelated articles.
+
+Return ONLY a JSON object: { "topics": [ { "label": "...", "headline": "..." }, ... ] }`,
         },
         {
           role: 'user',
-          content: `Here are today's top headlines:\n\n${headlines.map((h, i) => `${i + 1}. ${h}`).join('\n')}\n\nPick 4 and return {label, headline} pairs.`,
+          content: `Headlines:\n\n${headlines.map((h, i) => `${i + 1}. ${h}`).join('\n')}\n\nPick 4. For each: headline = exact line from the list; label = short story-specific title for that same event.`,
         },
       ],
       response_format: { type: 'json_object' },

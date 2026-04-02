@@ -33,6 +33,7 @@ export function useGraph() {
   const nodesRef = useRef([]);
   const linksRef = useRef([]);
   const rootLabelRef = useRef('');
+  const sessionTopicRef = useRef('');
   // nodeId → label of its direct parent (for accurate context in explain/expand)
   const parentLabelOfRef = useRef(new Map());
   // nodeId → {x, y} before it was pushed outward (for restoring on collapse)
@@ -52,6 +53,7 @@ export function useGraph() {
     nodesRef.current = [];
     linksRef.current = [];
     rootLabelRef.current = '';
+    sessionTopicRef.current = topic;
     parentLabelOfRef.current = new Map();
     originalPositionRef.current = new Map();
     explanationCacheRef.current = new Map();
@@ -118,6 +120,7 @@ export function useGraph() {
               nodeLabel: node.label,
               parentContext: nodeParentLabel,
               existingLabels,
+              sessionTopic: sessionTopicRef.current || '',
             }),
           });
           if (!res.ok) throw new Error((await res.json()).error || 'Server error');
@@ -228,6 +231,7 @@ export function useGraph() {
     graphData: { nodes: [...nodesRef.current], links: [...linksRef.current] },
     expandedNodes: new Set(expandedNodes),
     rootLabel: rootLabelRef.current,
+    sessionTopic: sessionTopicRef.current,
     parentLabelOf: new Map(parentLabelOfRef.current),
     originalPosition: new Map(originalPositionRef.current),
     explanationCache: new Map(explanationCacheRef.current),
@@ -238,6 +242,7 @@ export function useGraph() {
     nodesRef.current = snap.graphData.nodes;
     linksRef.current = snap.graphData.links;
     rootLabelRef.current = snap.rootLabel;
+    sessionTopicRef.current = snap.sessionTopic || '';
     parentLabelOfRef.current = snap.parentLabelOf;
     originalPositionRef.current = snap.originalPosition;
     explanationCacheRef.current = snap.explanationCache;
@@ -260,6 +265,7 @@ export function useGraph() {
     nodesRef.current = [];
     linksRef.current = [];
     rootLabelRef.current = '';
+    sessionTopicRef.current = '';
     parentLabelOfRef.current = new Map();
     originalPositionRef.current = new Map();
     explanationCacheRef.current = new Map();
