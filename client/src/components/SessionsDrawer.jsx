@@ -7,7 +7,7 @@ function timeAgo(ts) {
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
-export default function SessionsDrawer({ sessions, activeSessionId, isOpen, onClose, onSwitch, onDelete }) {
+export default function SessionsDrawer({ sessions, activeSessionId, isOpen, onClose, onSwitch, onDelete, onClearAll }) {
   const sortedSessions = useMemo(
     () => [...sessions].sort((a, b) => (b.lastUsedAt ?? b.createdAt ?? 0) - (a.lastUsedAt ?? a.createdAt ?? 0)),
     [sessions],
@@ -39,11 +39,25 @@ export default function SessionsDrawer({ sessions, activeSessionId, isOpen, onCl
           className="flex items-center justify-between px-5 py-4 flex-shrink-0"
           style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}
         >
-          <div>
+          <div className="min-w-0 flex-1">
             <h2 className="text-white font-bold text-base">Your Explorations</h2>
             <p className="text-white/35 text-xs mt-0.5">
               {sessions.length} active exploration{sessions.length !== 1 ? 's' : ''}
             </p>
+            {sessions.length > 0 && onClearAll && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (window.confirm('Remove all saved explorations and go to the home screen? This cannot be undone.')) {
+                    onClearAll();
+                  }
+                }}
+                className="mt-2 text-xs font-medium text-red-400/80 hover:text-red-300 transition-colors"
+              >
+                Clear all
+              </button>
+            )}
           </div>
           <button
             onClick={onClose}

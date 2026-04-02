@@ -41,6 +41,30 @@ function buildSession(topic, mode, snap, shareId = null) {
   };
 }
 
+function normalizeTopicKey(topic) {
+  return (topic || '').trim().toLowerCase();
+}
+
+/** Append without duplicating the same display topic (case-insensitive). */
+function upsertSessionByTopic(prev, session) {
+  const key = normalizeTopicKey(session.topic);
+  if (!key) return [...prev, session];
+  return [...prev.filter((s) => normalizeTopicKey(s.topic) !== key), session];
+}
+
+/** Keep one session per topic; prefer the one with the latest lastUsedAt/createdAt. */
+function dedupeSessionsByTopic(sessions) {
+  if (!Array.isArray(sessions) || sessions.length < 2) return sessions;
+  const byKey = new Map();
+  for (const s of sessions) {
+    const key = normalizeTopicKey(s.topic) || s.id;
+    const prev = byKey.get(key);
+    const score = (x) => x.lastUsedAt ?? x.createdAt ?? 0;
+    if (!prev || score(s) >= score(prev)) byKey.set(key, s);
+  }
+  return Array.from(byKey.values());
+}
+
 export default function App() {
   const [phase, setPhase] = useState('search'); // 'search' | 'graph'
   const [currentTopic, setCurrentTopic] = useState('');
@@ -64,8 +88,8 @@ export default function App() {
     }
   });
 
-  // Sessions — initialised from localStorage (#2)
-  const [sessions, setSessions] = useState(() => loadSessions());
+  // Sessions — initialised from localStorage (#2), deduped by topic to fix legacy duplicates
+  const [sessions, setSessions] = useState(() => dedupeSessionsByTopic(loadSessions()));
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [sessionsOpen, setSessionsOpen] = useState(false);
 
@@ -200,7 +224,7 @@ export default function App() {
           );
         }
       }
-      return [...prev, session];
+      return upsertSessionByTopic(prev, session);
     });
     return session.id;
   }, [snapshot, currentTopic, mode, activeSessionId, shareId]);
@@ -249,6 +273,24 @@ export default function App() {
     if (activeSessionId === id) setActiveSessionId(null);
   }, [activeSessionId]);
 
+  // Wipe all saved sessions, clear live graph, return to home (from sessions drawer)
+  const handleClearAllSessions = useCallback(() => {
+    setSessions([]);
+    clearLive();
+    reset();
+    setPhase('search');
+    setStaticPicks(getRandomN(STATIC_TOPICS, 4));
+    setCurrentTopic('');
+    setPrefillTopic('');
+    setActiveSessionId(null);
+    setShareId(null);
+    setExplainMode('normal');
+    setSelectedNode(null);
+    setFollowUpNode(null);
+    setQuizTarget(null);
+    setSessionsOpen(false);
+  }, [reset, setSelectedNode]);
+
   const handleShare = useCallback(async () => {
     if (isSharing) return;
     setIsSharing(true);
@@ -291,7 +333,7 @@ export default function App() {
             );
           }
         }
-        return [...prev, session];
+        return upsertSessionByTopic(prev, session);
       });
     }
     setSelectedNode(null);
@@ -322,7 +364,7 @@ export default function App() {
               );
             }
           }
-          return [...prev, session];
+          return upsertSessionByTopic(prev, session);
         });
       }
       saveToHistory(topic);
@@ -402,7 +444,7 @@ export default function App() {
             );
           }
         }
-        return [...prev, session];
+        return upsertSessionByTopic(prev, session);
       });
     }
     clearLive(); // user explicitly left — don't auto-restore this graph
@@ -654,6 +696,7 @@ export default function App() {
         onClose={() => setSessionsOpen(false)}
         onSwitch={switchToSession}
         onDelete={deleteSession}
+        onClearAll={handleClearAllSessions}
       />
 
       {/* Follow-up modal — stays on the graph, saves current session */}
