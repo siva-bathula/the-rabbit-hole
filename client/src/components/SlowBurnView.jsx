@@ -12,7 +12,7 @@ function modeCacheKey(nodeId, mode) {
   return mode === 'normal' ? nodeId : `${nodeId}::${mode}`;
 }
 
-function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, cache, mode = 'normal') {
+function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, groundingContext, cache, mode = 'normal') {
   const [explanation, setExplanation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -52,6 +52,7 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, cache,
         parentContext: parentContext || node.label,
         rootTopic: rootLabel || '',
         sessionTopic: sessionTopic || '',
+        groundingContext: groundingContext || '',
         mode,
       }),
     })
@@ -75,7 +76,7 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, cache,
     return () => {
       cancelled = true;
     };
-  }, [node?.id, parentContext, rootLabel, sessionTopic, mode]);
+  }, [node?.id, parentContext, rootLabel, sessionTopic, groundingContext, mode]);
 
   const handlePullThread = useCallback(async () => {
     if (!explanation || isPulling) return;
@@ -91,6 +92,7 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, cache,
           parentContext: parentContext || node.label,
           rootTopic: rootLabel || '',
           sessionTopic: sessionTopic || '',
+          groundingContext: groundingContext || '',
           existingSummary: explanation.summary || '',
           mode,
         }),
@@ -110,13 +112,13 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, cache,
     } finally {
       setIsPulling(false);
     }
-  }, [explanation, isPulling, node, parentContext, rootLabel, sessionTopic, mode, cache]);
+  }, [explanation, isPulling, node, parentContext, rootLabel, sessionTopic, groundingContext, mode, cache]);
 
   return { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread };
 }
 
-function ContentArea({ node, parentContext, rootLabel, sessionTopic, cache, onExplore, onQuizMe, explainMode = 'normal', onExplainModeChange }) {
-  const { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread } = useNodeExplanation(node, parentContext, rootLabel, sessionTopic, cache, explainMode);
+function ContentArea({ node, parentContext, rootLabel, sessionTopic, groundingContext, cache, onExplore, onQuizMe, explainMode = 'normal', onExplainModeChange }) {
+  const { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread } = useNodeExplanation(node, parentContext, rootLabel, sessionTopic, groundingContext, cache, explainMode);
   const [copied, setCopied] = useState(false);
   const [copiedDeeper, setCopiedDeeper] = useState(false);
 
@@ -430,6 +432,7 @@ export default function SlowBurnView({
   expandingNodeId,
   rootLabel,
   sessionTopic = '',
+  groundingContext = '',
   isExploring,
   onExplore,
   explanationCache,
@@ -529,6 +532,7 @@ export default function SlowBurnView({
               parentContext={parentContext}
               rootLabel={rootLabel}
               sessionTopic={sessionTopic}
+              groundingContext={groundingContext}
               cache={explanationCache}
               onExplore={onExplore}
               onQuizMe={onQuizMe}

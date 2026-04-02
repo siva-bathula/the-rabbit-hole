@@ -10,7 +10,7 @@ function modeCacheKey(nodeId, mode) {
   return mode === 'normal' ? nodeId : `${nodeId}::${mode}`;
 }
 
-export default function NodeOverlay({ node, rootTopic, sessionTopic = '', onClose, onExpand, onCollapse, onExplore, isExpanding, isExpanded, explanationCache, onForkHole, onExplanationCached, onAskFollowUp, onQuizMe, explainMode = 'normal', onExplainModeChange }) {
+export default function NodeOverlay({ node, rootTopic, sessionTopic = '', groundingContext = '', onClose, onExpand, onCollapse, onExplore, isExpanding, isExpanded, explanationCache, onForkHole, onExplanationCached, onAskFollowUp, onQuizMe, explainMode = 'normal', onExplainModeChange }) {
   const [explanation, setExplanation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -59,6 +59,7 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', onClos
         parentContext: rootTopic || node.label,
         rootTopic: rootTopic || '',
         sessionTopic: sessionTopic || '',
+        groundingContext: groundingContext || '',
         mode: explainMode,
       }),
     })
@@ -81,7 +82,7 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', onClos
       });
 
     return () => { cancelled = true; };
-  }, [node?.id, explainMode, rootTopic, sessionTopic]);
+  }, [node?.id, explainMode, rootTopic, sessionTopic, groundingContext]);
 
   const handlePullThread = useCallback(async () => {
     if (!explanation || isPulling) return;
@@ -97,6 +98,7 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', onClos
           parentContext: rootTopic || node.label,
           rootTopic: rootTopic || '',
           sessionTopic: sessionTopic || '',
+          groundingContext: groundingContext || '',
           existingSummary: explanation.summary || '',
           mode: explainMode,
         }),
@@ -118,7 +120,7 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', onClos
     } finally {
       setIsPulling(false);
     }
-  }, [explanation, isPulling, node, rootTopic, sessionTopic, explainMode, explanationCache]);
+  }, [explanation, isPulling, node, rootTopic, sessionTopic, groundingContext, explainMode, explanationCache]);
 
   if (!node) return null;
 

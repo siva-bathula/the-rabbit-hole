@@ -56,14 +56,16 @@ function sanitizeGraph(data) {
 }
 
 router.post('/', async (req, res) => {
-  const { topic } = req.body;
+  const { topic, groundingContext } = req.body;
 
   if (!topic?.trim()) {
     return res.status(400).json({ error: 'Topic is required' });
   }
 
   try {
-    const raw = await generateNodes(topic.trim());
+    const raw = await generateNodes(topic.trim(), {
+      groundingContext: typeof groundingContext === 'string' ? groundingContext : '',
+    });
 
     if (!raw.nodes || !raw.edges) {
       return res.status(500).json({ error: 'Invalid response from AI' });

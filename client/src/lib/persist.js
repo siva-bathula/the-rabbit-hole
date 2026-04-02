@@ -35,6 +35,7 @@ function serializeSnap(snap) {
     expandedNodes: [...snap.expandedNodes],
     rootLabel: snap.rootLabel,
     sessionTopic: snap.sessionTopic || '',
+    groundingContext: snap.groundingContext || '',
     parentLabelOf: [...snap.parentLabelOf.entries()],
     originalPosition: [...snap.originalPosition.entries()],
     explanationCache: [...snap.explanationCache.entries()],
@@ -48,6 +49,7 @@ function deserializeSnap(raw) {
     expandedNodes: new Set(raw.expandedNodes),
     rootLabel: raw.rootLabel,
     sessionTopic: raw.sessionTopic || '',
+    groundingContext: raw.groundingContext || '',
     parentLabelOf: new Map(raw.parentLabelOf),
     originalPosition: new Map(raw.originalPosition),
     explanationCache: new Map(raw.explanationCache),
@@ -73,6 +75,7 @@ export function loadLive() {
     if (!raw || !raw.graphData?.nodes?.length) return null;
     const snap = deserializeSnap(raw);
     if (!snap.sessionTopic && raw.topic) snap.sessionTopic = raw.topic;
+    if (!snap.groundingContext && raw.groundingContext) snap.groundingContext = raw.groundingContext;
     return { snap, topic: raw.topic, mode: raw.mode, activeSessionId: raw.activeSessionId ?? null, shareId: raw.shareId ?? null };
   } catch {
     return null;
@@ -135,6 +138,7 @@ export function loadSessions() {
 export function serializeShareSnap(snap, topic) {
   return {
     topic: topic || '',
+    groundingContext: snap.groundingContext || '',
     graphData: {
       nodes: snap.graphData.nodes,
       links: normalizeLinks(snap.graphData.links),
@@ -151,6 +155,7 @@ export function deserializeShareSnap(raw) {
     graphData: raw.graphData,
     rootLabel: raw.rootLabel,
     sessionTopic: raw.topic || '',
+    groundingContext: raw.groundingContext || '',
     expandedNodes: new Set(raw.expandedNodes),
     parentLabelOf: new Map(raw.parentLabelOf),
     originalPosition: new Map(raw.originalPosition),

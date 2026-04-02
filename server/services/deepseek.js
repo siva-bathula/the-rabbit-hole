@@ -71,6 +71,13 @@ function isNewsAnchoredTopic(topic) {
   return typeof topic === 'string' && /\s[—–]\s/.test(topic);
 }
 
+/** Plain-text RSS excerpt + optional URL, threaded into news prompts. */
+function newsGroundingSuffix(groundingContext) {
+  const g = typeof groundingContext === 'string' ? groundingContext.trim() : '';
+  if (!g) return '';
+  return `\n\nSOURCE SNIPPET (from RSS; prefer aligning concrete claims with this. You may add widely accepted background not contradicted by it):\n${g}\n`;
+}
+
 /** Extra system + user prompt fragments when the session is a trending "label — headline" story. */
 function newsAnchoredAugmentation(anchorTopic, kind) {
   if (!isNewsAnchoredTopic(anchorTopic)) {
@@ -92,10 +99,12 @@ function newsAnchoredAugmentation(anchorTopic, kind) {
   };
 }
 
-export async function generateNodes(topic) {
+export async function generateNodes(topic, options = {}) {
   const t0 = Date.now();
+  const newsGrounding = typeof options.groundingContext === 'string' ? options.groundingContext.trim() : '';
 
   const newsAnchored = isNewsAnchoredTopic(topic);
+  const hasSnippet = newsAnchored && !!newsGrounding;
 
   const newsRules = newsAnchored
     ? `
@@ -105,6 +114,16 @@ TRENDING / NEWS MODE (input contains " — " separating a short label from the f
 - The entire graph must help the user understand **this event**: what happened, who or what is involved, why it matters, timeline or background only as it clarifies the story, and implications — stay anchored to the headline, not a generic encyclopedia article on the broad field.
 - Root label (2-6 words): a clear, specific title for THIS story (you may blend label + headline meaning; do not paste the full headline).
 - Child nodes: angles on THIS story (e.g. key facts, stakeholders, policy or science context, what happens next, related Indian angle if relevant) — NOT unrelated generic subtopics.
+${
+  hasSnippet
+    ? `
+When a SOURCE SNIPPET appears in the user message below:
+- Use it as the factual anchor for what is being reported (entities, claims, timing hints in the text).
+- Among the 8-12 child nodes, explicitly cover these angles with clear short labels: (1) What happened / lead facts, (2) Why editors and readers care right now (newsworthiness — timeliness, stakes, change, public interest), (3) Background a general reader needs to understand the headline. You may add more nodes for stakeholders, what next, or India-relevant angle.
+- Do not invent quotes, exact statistics, or named sources not supported by the headline or snippet; broad, well-known context is OK if it does not contradict the snippet.
+`
+    : ''
+}
 `
     : '';
 
@@ -132,9 +151,10 @@ CRITICAL RULES ? you must follow these exactly:
     },
   });
 
-  const userPrompt = newsAnchored
+  let userPrompt = newsAnchored
     ? `Trending news exploration ? stay focused on THIS story (label and headline/context):\n${topic}`
     : `Topic: ${topic}`;
+  userPrompt += newsGroundingSuffix(newsGrounding);
 
   const result = await model.generateContent(userPrompt);
   const text = result.response.text();
@@ -143,7 +163,14 @@ CRITICAL RULES ? you must follow these exactly:
   return JSON.parse(text);
 }
 
-export async function expandNode(nodeId, nodeLabel, parentContext, existingLabels, sessionTopic = '') {
+export async function expandNode(
+  nodeId,
+  nodeLabel,
+  parentContext,
+  existingLabels,
+  sessionTopic = '',
+  groundingContext = '',
+) {
   const t0 = Date.now();
 
   const { systemExtra, userPrefix } = newsAnchoredAugmentation(sessionTopic, 'expand');
@@ -174,7 +201,7 @@ Rules:
   });
 
   const result = await model.generateContent(
-    `${userPrefix}Concept to expand: "${nodeLabel}"\nContext/parent topic: ${parentContext}\nAlready in graph (do not repeat): ${existingLabels.join(', ')}`
+    `${userPrefix}Concept to expand: "${nodeLabel}"\nContext/parent topic: ${parentContext}\nAlready in graph (do not repeat): ${existingLabels.join(', ')}${newsGroundingSuffix(groundingContext)}`
   );
 
   console.log(`[expandNode] "${nodeLabel}" ? ${Date.now() - t0}ms`);
@@ -220,7 +247,14 @@ function isCodeRootTopic(rootTopic) {
   return CODE_ROOT_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
-export async function explainNode(nodeLabel, parentContext, rootTopic = '', mode = 'normal', sessionTopic = '') {
+export async function explainNode(
+  nodeLabel,
+  parentContext,
+  rootTopic = '',
+  mode = 'normal',
+  sessionTopic = '',
+  groundingContext = '',
+) {
   const isRoot = !parentContext || parentContext === nodeLabel;
   const needsCode = isCodeNode(nodeLabel) || isCodeRootTopic(rootTopic);
   const { systemExtra, userPrefix } = newsAnchoredAugmentation(sessionTopic, 'explain');
@@ -275,6 +309,7 @@ ${codeField}
 
 Be precise and specific. Every word should earn its place.`;
 
+  const g = newsGroundingSuffix(groundingContext);
   const response = await client.chat.completions.create({
     model: MODEL,
     messages: [
@@ -282,8 +317,8 @@ Be precise and specific. Every word should earn its place.`;
       {
         role: 'user',
         content: isRoot
-          ? `${userPrefix}Topic: "${nodeLabel}"`
-          : `${userPrefix}Subtopic: "${nodeLabel}"\nParent topic: "${parentContext}"`,
+          ? `${userPrefix}Topic: "${nodeLabel}"${g}`
+          : `${userPrefix}Subtopic: "${nodeLabel}"\nParent topic: "${parentContext}"${g}`,
       },
     ],
     response_format: { type: 'json_object' },
@@ -293,7 +328,15 @@ Be precise and specific. Every word should earn its place.`;
   return JSON.parse(response.choices[0].message.content);
 }
 
-export async function deepenNode(nodeLabel, parentContext, rootTopic = '', existingSummary = '', mode = 'normal', sessionTopic = '') {
+export async function deepenNode(
+  nodeLabel,
+  parentContext,
+  rootTopic = '',
+  existingSummary = '',
+  mode = 'normal',
+  sessionTopic = '',
+  groundingContext = '',
+) {
   const needsCode = isCodeNode(nodeLabel) || isCodeRootTopic(rootTopic);
   const { systemExtra, userPrefix } = newsAnchoredAugmentation(sessionTopic, 'deepen');
 
@@ -329,13 +372,14 @@ ${codeField}
 
 Be precise. Every sentence must earn its place. No filler.`;
 
+  const g = newsGroundingSuffix(groundingContext);
   const response = await client.chat.completions.create({
     model: MODEL,
     messages: [
       { role: 'system', content: systemPrompt },
       {
         role: 'user',
-        content: `${userPrefix}Topic: "${nodeLabel}"\nContext: "${parentContext || nodeLabel}"`,
+        content: `${userPrefix}Topic: "${nodeLabel}"\nContext: "${parentContext || nodeLabel}"${g}`,
       },
     ],
     response_format: { type: 'json_object' },

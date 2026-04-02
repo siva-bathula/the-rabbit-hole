@@ -34,6 +34,7 @@ export function useGraph() {
   const linksRef = useRef([]);
   const rootLabelRef = useRef('');
   const sessionTopicRef = useRef('');
+  const groundingContextRef = useRef('');
   // nodeId → label of its direct parent (for accurate context in explain/expand)
   const parentLabelOfRef = useRef(new Map());
   // nodeId → {x, y} before it was pushed outward (for restoring on collapse)
@@ -43,7 +44,10 @@ export function useGraph() {
   // nodeId → raw API response from /api/expand (avoids re-fetching on collapse+re-expand)
   const expandDataCacheRef = useRef(new Map());
 
-  const explore = useCallback(async (topic) => {
+  const explore = useCallback(async (payload) => {
+    const topic = typeof payload === 'string' ? payload : payload.topic;
+    const groundingContext = typeof payload === 'string' ? '' : (payload.groundingContext || '');
+
     setIsExploring(true);
     setError(null);
     setSelectedNode(null);
@@ -54,6 +58,7 @@ export function useGraph() {
     linksRef.current = [];
     rootLabelRef.current = '';
     sessionTopicRef.current = topic;
+    groundingContextRef.current = groundingContext;
     parentLabelOfRef.current = new Map();
     originalPositionRef.current = new Map();
     explanationCacheRef.current = new Map();
@@ -63,7 +68,7 @@ export function useGraph() {
       const res = await fetch('/api/explore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic }),
+        body: JSON.stringify({ topic, groundingContext }),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Server error');
       const data = await res.json();
@@ -121,6 +126,7 @@ export function useGraph() {
               parentContext: nodeParentLabel,
               existingLabels,
               sessionTopic: sessionTopicRef.current || '',
+              groundingContext: groundingContextRef.current || '',
             }),
           });
           if (!res.ok) throw new Error((await res.json()).error || 'Server error');
@@ -232,6 +238,7 @@ export function useGraph() {
     expandedNodes: new Set(expandedNodes),
     rootLabel: rootLabelRef.current,
     sessionTopic: sessionTopicRef.current,
+    groundingContext: groundingContextRef.current,
     parentLabelOf: new Map(parentLabelOfRef.current),
     originalPosition: new Map(originalPositionRef.current),
     explanationCache: new Map(explanationCacheRef.current),
@@ -243,6 +250,7 @@ export function useGraph() {
     linksRef.current = snap.graphData.links;
     rootLabelRef.current = snap.rootLabel;
     sessionTopicRef.current = snap.sessionTopic || '';
+    groundingContextRef.current = snap.groundingContext || '';
     parentLabelOfRef.current = snap.parentLabelOf;
     originalPositionRef.current = snap.originalPosition;
     explanationCacheRef.current = snap.explanationCache;
@@ -266,6 +274,7 @@ export function useGraph() {
     linksRef.current = [];
     rootLabelRef.current = '';
     sessionTopicRef.current = '';
+    groundingContextRef.current = '';
     parentLabelOfRef.current = new Map();
     originalPositionRef.current = new Map();
     explanationCacheRef.current = new Map();
@@ -281,6 +290,7 @@ export function useGraph() {
     isExploring,
     error,
     rootLabel,
+    groundingContext: groundingContextRef.current,
     explore,
     expand,
     collapse,

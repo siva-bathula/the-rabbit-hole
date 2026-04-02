@@ -320,13 +320,20 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, ses
                     </p>
                     <div className="flex flex-wrap justify-center gap-2">
                       {trendingTopics.map((t) => {
-                        // Support both old string format and new {label, headline} format
+                        // Support both old string format and new {label, headline, grounding?} format
                         const label = typeof t === 'string' ? t : t.label;
                         const headline = typeof t === 'string' ? t : (t.headline || t.label);
+                        const groundingContext = typeof t === 'string' ? '' : (t.grounding || '');
                         return (
                           <button
-                            key={label}
-                            onClick={() => onSearch({ query: `${label} — ${headline}`, displayLabel: label })}
+                            key={`${label}::${headline.slice(0, 48)}`}
+                            onClick={() =>
+                              onSearch({
+                                query: `${label} — ${headline}`,
+                                displayLabel: label,
+                                groundingContext,
+                              })
+                            }
                             title={headline}
                             className="px-3 py-1.5 rounded-full text-xs font-medium transition-all
                               text-orange-200/80 hover:text-white

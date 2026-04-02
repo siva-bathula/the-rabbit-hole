@@ -62,6 +62,68 @@ function cleanTitle(raw) {
   return raw.replace(/\s[-–]\s[^-–]+$/, '').trim();
 }
 
+function textFromXmlField(val) {
+  if (val == null) return '';
+  if (typeof val === 'string') return val;
+  if (typeof val === 'object' && val['#text'] != null) return String(val['#text']);
+  return String(val);
+}
+
+/** Strip tags / common entities so RSS HTML descriptions become plain text. */
+function stripHtml(html) {
+  const s = textFromXmlField(html);
+  return s
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const MAX_SNIPPET_LEN = 1600;
+
+function parseRssItem(item) {
+  const rawTitle = textFromXmlField(item.title);
+  const title = cleanTitle(rawTitle);
+  let link = textFromXmlField(item.link);
+  if (typeof item.link === 'object' && item.link?.['@_href']) link = item.link['@_href'];
+  const desc =
+    item.description ??
+    item['content:encoded'] ??
+    item.summary ??
+    item['media:description'] ??
+    '';
+  const summary = stripHtml(desc).slice(0, MAX_SNIPPET_LEN);
+  return { title, link: link.trim(), summary };
+}
+
+/** Match distillation headline back to RSS row (exact title; tolerant of minor LLM edits). */
+function enrichTopicsWithRss(topics, items) {
+  return topics.map((t) => {
+    const headline = (t.headline || t.label || '').trim();
+    let hit = items.find((i) => i.title === headline);
+    if (!hit) {
+      const h = headline.toLowerCase();
+      hit = items.find((i) => i.title.toLowerCase() === h);
+    }
+    if (!hit) {
+      hit = items.find(
+        (i) =>
+          headline.length > 12 &&
+          (i.title.includes(headline.slice(0, 40)) || headline.includes(i.title.slice(0, 40))),
+      );
+    }
+    const parts = [hit?.summary].filter(Boolean);
+    if (hit?.link) parts.push(`Source URL: ${hit.link}`);
+    const grounding = parts.join('\n\n').trim();
+    return { label: t.label, headline: t.headline || t.label, link: hit?.link || '', summary: hit?.summary || '', grounding };
+  });
+}
+
 async function fetchHeadlines() {
   for (const { url, type } of RSS_SOURCES) {
     try {
@@ -79,19 +141,20 @@ async function fetchHeadlines() {
       const parser = new XMLParser();
       const parsed = parser.parse(xml);
 
-      const items = parsed?.rss?.channel?.item ?? [];
-      const headlines = (Array.isArray(items) ? items : [items])
-        .slice(0, 10)
-        .map((item) => cleanTitle(item.title))
-        .filter((t) => {
-          if (!t) return false;
-          const lower = t.toLowerCase();
+      const rawItems = parsed?.rss?.channel?.item ?? [];
+      const itemList = Array.isArray(rawItems) ? rawItems : [rawItems];
+      const parsedItems = itemList
+        .slice(0, 12)
+        .map(parseRssItem)
+        .filter((row) => {
+          if (!row.title) return false;
+          const lower = row.title.toLowerCase();
           return !ERROR_STRINGS.some((e) => lower.includes(e));
         });
 
       // Require at least 3 valid headlines before accepting this source
-      if (headlines.length >= 3) return headlines;
-      console.warn(`[trending] Source ${type} returned only ${headlines.length} valid headlines`);
+      if (parsedItems.length >= 3) return parsedItems;
+      console.warn(`[trending] Source ${type} returned only ${parsedItems.length} valid headlines`);
     } catch (err) {
       console.error(`[trending] Failed to fetch from ${type}, trying next source…`);
       console.error(`[trending] Error fetching from ${type}:`, err);
@@ -100,7 +163,7 @@ async function fetchHeadlines() {
   throw new Error('All RSS sources failed');
 }
 
-async function distilTopics(headlines) {
+async function distilTopics(headlines, rssItems) {
   console.log('[trending] Distilling topics from headlines:', headlines);
   const response = await withTimeout(
     client.chat.completions.create({
@@ -143,9 +206,10 @@ Return ONLY a JSON object: { "topics": [ { "label": "...", "headline": "..." }, 
     throw new Error('Invalid topics response from AI');
   }
   // Accept both old (string) and new ({label,headline}) formats gracefully
-  return data.topics.slice(0, 4).map((t) =>
+  const picked = data.topics.slice(0, 4).map((t) =>
     typeof t === 'string' ? { label: t, headline: t } : { label: t.label, headline: t.headline || t.label }
   );
+  return enrichTopicsWithRss(picked, rssItems);
 }
 
 const REFRESH_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -177,18 +241,19 @@ export async function fetchAndCacheTrending() {
 
   try {
     console.log('[trending] Fetching RSS headlines…');
-    let headlines = [];
+    let rssItems = [];
     try {
-      headlines = await fetchHeadlines();
+      rssItems = await fetchHeadlines();
     } catch (err) {
       console.error('[trending] Inner try :: Failed to fetch headlines:', err.message);
       throw err;
     }
-    if (!Array.isArray(headlines) || headlines.length === 0) {
+    if (!Array.isArray(rssItems) || rssItems.length === 0) {
       throw new Error('Invalid headlines payload');
     }
+    const headlines = rssItems.map((r) => r.title);
     console.log(`[trending] Got ${headlines.length} headlines, distilling…`);
-    const topics = await distilTopics(headlines);
+    const topics = await distilTopics(headlines, rssItems);
 
     // Only update the cache if we got exactly 4 valid topics
     if (Array.isArray(topics) && topics.length === 4) {

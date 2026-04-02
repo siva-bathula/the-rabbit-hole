@@ -32,7 +32,16 @@ function makeId(len = 8) {
 // If id is provided, upserts that document (stable link). Otherwise creates a new one.
 // Returns: { id }
 router.post('/', async (req, res) => {
-  const { id: existingId, topic, graphData, rootLabel, expandedNodes, parentLabelOf, originalPosition } = req.body;
+  const {
+    id: existingId,
+    topic,
+    groundingContext,
+    graphData,
+    rootLabel,
+    expandedNodes,
+    parentLabelOf,
+    originalPosition,
+  } = req.body;
 
   if (!graphData?.nodes?.length) {
     return res.status(400).json({ error: 'graphData with nodes is required' });
@@ -56,6 +65,7 @@ router.post('/', async (req, res) => {
     await firestore.collection(COLLECTION).doc(id).set({
       id,
       topic: topic || '',
+      groundingContext: typeof groundingContext === 'string' ? groundingContext : '',
       graphData,
       rootLabel: rootLabel || '',
       expandedNodes: expandedNodes || [],
@@ -93,6 +103,7 @@ router.get('/:id', async (req, res) => {
     const data = doc.data();
     res.json({
       topic: data.topic,
+      groundingContext: data.groundingContext || '',
       graphData: data.graphData,
       rootLabel: data.rootLabel,
       expandedNodes: data.expandedNodes,

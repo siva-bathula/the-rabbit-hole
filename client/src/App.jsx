@@ -38,6 +38,7 @@ function buildSession(topic, mode, snap, shareId = null) {
     originalPosition: snap.originalPosition,
     explanationCache: snap.explanationCache,
     expandDataCache: snap.expandDataCache,
+    groundingContext: snap.groundingContext || '',
   };
 }
 
@@ -130,6 +131,7 @@ export default function App() {
     isExploring,
     error,
     rootLabel,
+    groundingContext,
     explore,
     expand,
     collapse,
@@ -257,6 +259,7 @@ export default function App() {
         originalPosition: target.originalPosition,
         explanationCache: target.explanationCache,
         expandDataCache: target.expandDataCache,
+        groundingContext: target.groundingContext || '',
       });
       setCurrentTopic(target.topic);
       setMode(target.mode);
@@ -380,13 +383,14 @@ export default function App() {
 
   const handleSearch = useCallback(
     async (input) => {
-      // Accept either a plain string or {query, displayLabel} from trending chips
+      // Accept either a plain string or {query, displayLabel, groundingContext?} from trending chips
       const displayLabel = typeof input === 'string' ? input : input.displayLabel;
       const query = typeof input === 'string' ? input : input.query;
+      const gc = typeof input === 'string' ? '' : (input.groundingContext || '');
       saveToHistory(displayLabel);
       setPrefillTopic('');
-      setCurrentTopic(displayLabel);
-      await explore(query);
+      setCurrentTopic(query);
+      await explore(gc ? { topic: query, groundingContext: gc } : query);
       setPhase('graph');
       setActiveSessionId(null);
     },
@@ -493,6 +497,7 @@ export default function App() {
                   node={selectedNode}
                   rootTopic={rootLabel}
                   sessionTopic={currentTopic}
+                  groundingContext={groundingContext}
                   onClose={() => setSelectedNode(null)}
                   onExpand={handleExpand}
                   onCollapse={handleCollapse}
@@ -544,6 +549,7 @@ export default function App() {
                 expandingNodeId={expandingNodeId}
                 rootLabel={rootLabel}
                 sessionTopic={currentTopic}
+                groundingContext={groundingContext}
                 isExploring={isExploring}
                 onExplore={handleRelatedExplore}
                 explanationCache={explanationCache}
