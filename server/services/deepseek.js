@@ -71,11 +71,11 @@ function isNewsAnchoredTopic(topic) {
   return typeof topic === 'string' && /\s[—–]\s/.test(topic);
 }
 
-/** Plain-text RSS excerpt + optional URL, threaded into news prompts. */
-function newsGroundingSuffix(groundingContext) {
+/** RSS / session grounding text appended to the user message (not Wikipedia). */
+function sourceGroundingSuffix(groundingContext) {
   const g = typeof groundingContext === 'string' ? groundingContext.trim() : '';
   if (!g) return '';
-  return `\n\nSOURCE SNIPPET (from RSS; prefer aligning concrete claims with this. You may add widely accepted background not contradicted by it):\n${g}\n`;
+  return `\n\nSOURCE MATERIAL (excerpt below; align key facts and node labels with it when relevant; do not invent specifics that contradict it; you may add widely accepted context that does not contradict it):\n${g}\n`;
 }
 
 /** Extra system + user prompt fragments when the session is a trending "label — headline" story. */
@@ -106,7 +106,7 @@ export async function generateNodes(topic, options = {}) {
   const newsAnchored = isNewsAnchoredTopic(topic);
   const hasSnippet = newsAnchored && !!newsGrounding;
 
-  const newsRules = newsAnchored
+  const topicModeRules = newsAnchored
     ? `
 
 TRENDING / NEWS MODE (input contains " — " separating a short label from the full headline or context):
@@ -117,18 +117,31 @@ TRENDING / NEWS MODE (input contains " — " separating a short label from the f
 ${
   hasSnippet
     ? `
-When a SOURCE SNIPPET appears in the user message below:
+When SOURCE MATERIAL appears in the user message below:
 - Use it as the factual anchor for what is being reported (entities, claims, timing hints in the text).
 - Among the 8-12 child nodes, explicitly cover these angles with clear short labels: (1) What happened / lead facts, (2) Why editors and readers care right now (newsworthiness — timeliness, stakes, change, public interest), (3) Background a general reader needs to understand the headline. You may add more nodes for stakeholders, what next, or India-relevant angle.
-- Do not invent quotes, exact statistics, or named sources not supported by the headline or snippet; broad, well-known context is OK if it does not contradict the snippet.
+- Do not invent quotes, exact statistics, or named sources not supported by the headline or excerpt; broad, well-known context is OK if it does not contradict the excerpt.
 `
     : ''
 }
 `
-    : '';
+    : `
+
+GENERAL TOPIC MODE:
+- The user's input is the single learning focus. Every child must clearly advance understanding of THIS topic — not unrelated trivia or generic textbook branches.
+- Prefer one coherent path: e.g. what it is → how it works / key ideas → typical uses or implications → pitfalls or misconceptions → what to explore next. Do not add a "history" or "theory" node unless it is essential to understanding this exact subject.
+- Each child label must read as an obvious next question a learner would ask about the user's topic (not a random fact from a neighbouring field).
+- Root label (2-6 words): faithful to the user's intent.
+- Generate 6-10 child nodes (prioritise cohesion over quantity).
+- If SOURCE MATERIAL is in the user message, align the graph with it; do not state dates, numbers, or names that contradict it.
+`;
+
+  const childCountLine = newsAnchored
+    ? '5. Generate 8-12 child nodes total.'
+    : '5. Generate 6-10 child nodes total.';
 
   const systemInstruction = SAFETY_GUARDRAIL + `You are a knowledge graph generator. The user may provide a question or a plain topic ? either way, extract the core concept and build a knowledge graph around it.
-${newsRules}
+${topicModeRules}
 Return ONLY a JSON object with exactly these fields:
 - "nodes": array of objects, each with { "id": string, "label": string, "group": string }
 - "edges": array of objects, each with { "source": string, "target": string }
@@ -138,7 +151,7 @@ CRITICAL RULES ? you must follow these exactly:
 2. The root node label MUST be the full learning subject ? include the concept AND any relevant language, domain, or context from the user's input (e.g. "BIT in JavaScript", "Macroeconomics Basics", "Roman Empire History"). Keep it concise (2-6 words). Do NOT copy the full question verbatim.
 3. All child nodes must have unique IDs like "node_1", "node_2", etc.
 4. Every child node MUST have an edge with source "root" pointing to it. No child node should be left unconnected.
-5. Generate 8-12 child nodes total.
+${childCountLine}
 6. Groups can be: "core", "application", "history", "theory", "impact", "related"
 7. Child node labels should be concise (1-4 words max).`;
 
@@ -147,14 +160,14 @@ CRITICAL RULES ? you must follow these exactly:
     systemInstruction,
     generationConfig: {
       responseMimeType: 'application/json',
-      temperature: 0.5,
+      temperature: newsAnchored ? 0.45 : 0.35,
     },
   });
 
   let userPrompt = newsAnchored
     ? `Trending news exploration ? stay focused on THIS story (label and headline/context):\n${topic}`
     : `Topic: ${topic}`;
-  userPrompt += newsGroundingSuffix(newsGrounding);
+  userPrompt += sourceGroundingSuffix(newsGrounding);
 
   const result = await model.generateContent(userPrompt);
   const text = result.response.text();
@@ -175,8 +188,15 @@ export async function expandNode(
 
   const { systemExtra, userPrefix } = newsAnchoredAugmentation(sessionTopic, 'expand');
 
+  const generalExpand = !isNewsAnchoredTopic(sessionTopic)
+    ? `
+
+GENERAL EXPANSION: Each new subtopic must deepen "${nodeLabel}" in the context of "${parentContext}" — natural follow-ups (how it works, limits, examples, comparisons), not random definitions from unrelated fields. Stay on the same learning thread.`
+    : '';
+
   const systemInstruction = SAFETY_GUARDRAIL_BRIEF + `You are a knowledge graph expander. Given a concept, generate 5-7 deeper, more specific subtopics or related concepts.
 ${systemExtra}
+${generalExpand}
 
 Return ONLY a JSON object with exactly these fields:
 - "nodes": array of objects, each with { "id": string, "label": string, "group": string }
@@ -196,12 +216,12 @@ Rules:
     systemInstruction,
     generationConfig: {
       responseMimeType: 'application/json',
-      temperature: 0.5,
+      temperature: isNewsAnchoredTopic(sessionTopic) ? 0.45 : 0.35,
     },
   });
 
   const result = await model.generateContent(
-    `${userPrefix}Concept to expand: "${nodeLabel}"\nContext/parent topic: ${parentContext}\nAlready in graph (do not repeat): ${existingLabels.join(', ')}${newsGroundingSuffix(groundingContext)}`
+    `${userPrefix}Concept to expand: "${nodeLabel}"\nContext/parent topic: ${parentContext}\nAlready in graph (do not repeat): ${existingLabels.join(', ')}${sourceGroundingSuffix(groundingContext)}`
   );
 
   console.log(`[expandNode] "${nodeLabel}" ? ${Date.now() - t0}ms`);
@@ -309,7 +329,7 @@ ${codeField}
 
 Be precise and specific. Every word should earn its place.`;
 
-  const g = newsGroundingSuffix(groundingContext);
+  const g = sourceGroundingSuffix(groundingContext);
   const response = await client.chat.completions.create({
     model: MODEL,
     messages: [
@@ -372,7 +392,7 @@ ${codeField}
 
 Be precise. Every sentence must earn its place. No filler.`;
 
-  const g = newsGroundingSuffix(groundingContext);
+  const g = sourceGroundingSuffix(groundingContext);
   const response = await client.chat.completions.create({
     model: MODEL,
     messages: [

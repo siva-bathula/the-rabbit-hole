@@ -86,6 +86,103 @@ function stripHtml(html) {
 
 const MAX_SNIPPET_LEN = 1600;
 
+/**
+ * Case-insensitive guard for trending chips. Matches title + description.
+ * Word-boundary patterns avoid false positives (e.g. "scrape", "therapist").
+ */
+const TRENDING_BLOCK_PATTERNS = [
+  /\brape\b/i,
+  /\brapes\b/i,
+  /\braped\b/i,
+  /\braping\b/i,
+  /\brapist\b/i,
+  /gang\s*[-]?\s*rape/i,
+  /\bmolest/i,
+  /\bmolestation\b/i,
+  /sexual\s+assault/i,
+  /child\s+sex/i,
+  /\bpedoph/i,
+  /\bpaedoph/i,
+  /child\s+abuse/i,
+  /\bincest\b/i,
+  /\bbehead/i,
+  /\blynch/i,
+  /\bsuicide\b/i,
+  /self[- ]immolation/i,
+  /honou?r\s+kill/i,
+  /\bnecroph/i,
+  /\bbestiality\b/i,
+];
+
+function textFailsTrendingGuard(text) {
+  if (!text || typeof text !== 'string') return false;
+  return TRENDING_BLOCK_PATTERNS.some((re) => re.test(text));
+}
+
+/** Safe for chips when neither title nor summary trips the guard. */
+function isTrendingItemSafe(item) {
+  if (!item?.title) return false;
+  if (textFailsTrendingGuard(item.title)) return false;
+  if (textFailsTrendingGuard(item.summary || '')) return false;
+  return true;
+}
+
+function isTrendingTopicRowSafe(row) {
+  const blob = [row.label, row.headline, row.summary || ''].join('\n');
+  return !textFailsTrendingGuard(blob);
+}
+
+/** Short chip label when we substitute a headline without LLM help. */
+function fallbackLabelFromHeadline(headline) {
+  const cleaned = headline.replace(/^[\s"'“]+|[\s"'”]+$/g, '');
+  const words = cleaned.split(/\s+/).filter(Boolean).slice(0, 6);
+  let s = words.join(' ');
+  if (s.length > 48) s = `${s.slice(0, 45).trimEnd()}…`;
+  return s || cleaned.slice(0, 40);
+}
+
+function itemToFallbackTopic(item) {
+  const parts = [item.summary].filter(Boolean);
+  if (item.link) parts.push(`Source URL: ${item.link}`);
+  return {
+    label: fallbackLabelFromHeadline(item.title),
+    headline: item.title,
+    link: item.link || '',
+    summary: item.summary || '',
+    grounding: parts.join('\n\n').trim(),
+  };
+}
+
+/**
+ * Drop unsafe picks and pad from unused safe RSS rows so we still return 4 chips.
+ */
+function ensureFourSafeTopics(topics, safeItems) {
+  const usedTitles = new Set();
+  const out = [];
+
+  for (const t of topics) {
+    if (out.length >= 4) break;
+    if (!isTrendingTopicRowSafe(t)) {
+      console.warn('[trending] Dropping unsafe distillation pick:', t.headline?.slice(0, 80));
+      continue;
+    }
+    if (usedTitles.has(t.headline)) continue;
+    usedTitles.add(t.headline);
+    out.push(t);
+  }
+
+  for (const item of safeItems) {
+    if (out.length >= 4) break;
+    if (usedTitles.has(item.title)) continue;
+    if (!isTrendingItemSafe(item)) continue;
+    usedTitles.add(item.title);
+    out.push(itemToFallbackTopic(item));
+    console.log('[trending] Substituted safe headline from pool:', item.title.slice(0, 80));
+  }
+
+  return out.length === 4 ? out : null;
+}
+
 function parseRssItem(item) {
   const rawTitle = textFromXmlField(item.title);
   const title = cleanTitle(rawTitle);
@@ -152,9 +249,12 @@ async function fetchHeadlines() {
           return !ERROR_STRINGS.some((e) => lower.includes(e));
         });
 
-      // Require at least 3 valid headlines before accepting this source
-      if (parsedItems.length >= 3) return parsedItems;
-      console.warn(`[trending] Source ${type} returned only ${parsedItems.length} valid headlines`);
+      const safeItems = parsedItems.filter(isTrendingItemSafe);
+      // Need ≥4 safe rows so we can show 4 chips and replace any bad LLM pick from the pool
+      if (safeItems.length >= 4) return safeItems;
+      console.warn(
+        `[trending] Source ${type}: ${safeItems.length} safe headline(s) after filter (need 4); trying next source…`,
+      );
     } catch (err) {
       console.error(`[trending] Failed to fetch from ${type}, trying next source…`);
       console.error(`[trending] Error fetching from ${type}:`, err);
@@ -182,6 +282,7 @@ Rules:
 - Favour India-linked or India-relevant stories when possible (achievements, policy, economy, science, culture, sports, people).
 - Prefer educational, civic, or constructive angles; avoid gratuitous shock or outrage framing.
 - STRICTLY AVOID anti-Indian, hate, or exploitative angles; avoid operational detail that could enable harm.
+- NEVER pick a headline that mentions or centres on: sexual violence or rape, sexual assault, child sexual abuse, incest, graphic murder methods (beheading, lynching), suicide or self-harm, honour killing, or similarly traumatic / prurient crime stories — even if such lines appear in the list (they should not; if you see one, skip it).
 - STRICTLY AVOID picking headlines whose exploration would require graphic violence, illegal instructions, or extremist content.
 - The "headline" MUST be copied verbatim from the list (or trivial punctuation fix only).
 - The "label" MUST clearly refer to the same event as its headline — a reader should see they belong together.
@@ -254,13 +355,14 @@ export async function fetchAndCacheTrending() {
     const headlines = rssItems.map((r) => r.title);
     console.log(`[trending] Got ${headlines.length} headlines, distilling…`);
     const topics = await distilTopics(headlines, rssItems);
+    const vetted = ensureFourSafeTopics(topics, rssItems);
 
-    // Only update the cache if we got exactly 4 valid topics
-    if (Array.isArray(topics) && topics.length === 4) {
-      cachedTopics = topics;
-      console.log('[trending] Cache updated:', topics);
+    // Only update the cache if we have exactly 4 safe topics (pool substitution included)
+    if (Array.isArray(vetted) && vetted.length === 4) {
+      cachedTopics = vetted;
+      console.log('[trending] Cache updated:', vetted);
     } else {
-      console.warn('[trending] Skipping cache update — expected 4 topics, got:', topics?.length ?? 0);
+      console.warn('[trending] Skipping cache update — could not assemble 4 safe topics after filtering');
     }
   } catch (err) {
     console.error('[trending] Failed:', err.message);

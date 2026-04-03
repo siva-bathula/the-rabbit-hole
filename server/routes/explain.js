@@ -34,9 +34,6 @@ router.post('/', async (req, res) => {
   }
 
   try {
-    // Run DeepSeek explanation and Wikipedia lookup in parallel.
-    // Use nodeLabel alone for Wikipedia — appending parentContext causes the
-    // search to rank broader/related articles above the specific concept.
     const [data, wikipedia] = await Promise.all([
       explainNode(
         nodeLabel,

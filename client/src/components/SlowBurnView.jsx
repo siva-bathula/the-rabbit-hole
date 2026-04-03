@@ -179,6 +179,13 @@ function ContentArea({ node, parentContext, rootLabel, sessionTopic, groundingCo
 
       {explanation && !isLoading && (
         <div className="space-y-8">
+          <p
+            className="text-white/35 text-xs leading-relaxed border-l-2 border-white/10 pl-3"
+            role="note"
+          >
+            AI-generated from language models and optional sources (e.g. Wikipedia). May be incomplete,
+            imprecise, or out of date — verify important facts yourself.
+          </p>
           {/* Summary */}
           <p className="text-white/80 leading-relaxed text-base">{explanation.summary}</p>
 
