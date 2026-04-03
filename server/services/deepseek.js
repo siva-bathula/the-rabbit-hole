@@ -9,7 +9,7 @@ const client = new OpenAI({
 const MODEL = 'deepseek-chat';
 
 const geminiClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const gemini-2.5-flash-lite = 'gemini-2.5-flash-lite';
+const GEMINI_MODEL = 'gemini-2.5-flash-lite';
 const GEMINI_MODEL_FLASH = 'gemini-2.5-flash';
 const GEMINI_MODEL_PRO = 'gemini-2.5-pro';
 
@@ -461,7 +461,7 @@ Rules:
 Return ONLY a JSON object: { "questions": [ { "question": "...", "options": ["...", "...", "...", "..."], "correct": 0, "explanation": "..." } ] }`;
 
   const model = geminiClient.getGenerativeModel({
-    model: GEMINI_MODEL,
+    model: GEMINI_MODEL_FLASH,
     systemInstruction,
     generationConfig: {
       responseMimeType: 'application/json',
