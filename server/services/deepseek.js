@@ -9,7 +9,8 @@ const client = new OpenAI({
 const MODEL = 'deepseek-chat';
 
 const geminiClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const GEMINI_MODEL = 'gemini-2.5-flash-lite';
+const gemini-2.5-flash-lite = 'gemini-2.5-flash-lite';
+const GEMINI_MODEL_FLASH = 'gemini-2.5-flash';
 const GEMINI_MODEL_PRO = 'gemini-2.5-pro';
 
 // Full guardrail ? used on user-facing free-text inputs (main search, follow-up)
@@ -70,6 +71,21 @@ const SAFETY_GUARDRAIL_BRIEF = `Safety rule: If the topic involves weapons, self
 function isNewsAnchoredTopic(topic) {
   return typeof topic === 'string' && /\s[—–]\s/.test(topic);
 }
+
+/** Shared guidance to cut repetition, vague filler, and over-precise hallucinations (explain / deepen). */
+const EXPLAIN_CLARITY_RULES = `
+
+CLARITY AND HONESTY:
+- Each "details" bullet must add a distinct idea; do not restate the summary, do not echo the node title as empty filler, and do not pad with generic platitudes.
+- Do not state specific years, statistics, or direct quotes unless you are confident they are accurate and widely accepted; when unsure, use phrasing like "typically", "often", "in many cases", or "one common pattern".
+- Do not reuse the same metaphor or catchphrase across summary, details, and keyTakeaway.`;
+
+const DEEPEN_CLARITY_RULES = `
+
+CLARITY AND HONESTY:
+- Each advancedInsights string must be a distinct, non-obvious point; do not paraphrase the user's summary above and do not repeat basic definitions already implied by the topic.
+- Where practice varies, say so ("often", "in many codebases", "depends on context") instead of false precision.
+- Do not invent exact figures, dates, or attributed quotes.`;
 
 /** RSS / session grounding text appended to the user message (not Wikipedia). */
 function sourceGroundingSuffix(groundingContext) {
@@ -156,7 +172,7 @@ ${childCountLine}
 7. Child node labels should be concise (1-4 words max).`;
 
   const model = geminiClient.getGenerativeModel({
-    model: GEMINI_MODEL,
+    model: GEMINI_MODEL_FLASH,
     systemInstruction,
     generationConfig: {
       responseMimeType: 'application/json',
@@ -212,7 +228,7 @@ Rules:
 7. Labels should be concise (1-4 words max)`;
 
   const model = geminiClient.getGenerativeModel({
-    model: GEMINI_MODEL,
+    model: GEMINI_MODEL_FLASH,
     systemInstruction,
     generationConfig: {
       responseMimeType: 'application/json',
@@ -292,11 +308,15 @@ export async function explainNode(
       ? `Write for a domain expert who already has strong foundational knowledge. Use precise technical terminology without simplification. Skip basic definitions and introductory context entirely. Focus on mechanisms, edge cases, performance characteristics, design trade-offs, and non-obvious nuances a senior practitioner would find genuinely insightful. Be direct and technically rigorous ? every sentence must add real value.`
       : `Write in the voice of a knowledgeable, warm Indian educator ? think of a brilliant senior colleague from an IIT or a seasoned professional explaining things over chai. Use natural Indian English: phrases like "basically", "actually", "you see", "only" for emphasis, and the occasional "isn't it?" or "right?" to keep it conversational. Where it fits naturally, use analogies from everyday Indian life ? cricket, local markets, traffic, tiffin boxes ? but never force them. Be direct, confident, and make the reader feel like they are getting the real explanation, not a textbook answer.`;
 
+  const explainTemp =
+    mode === 'eli5' ? 0.68 : mode === 'expert' ? 0.72 : 0.42;
+
   const systemPrompt = isRoot
     ? SAFETY_GUARDRAIL_BRIEF + `You are a clear, engaging educator. The user is exploring "${nodeLabel}" as their main topic.
 ${systemExtra}
 
 ${toneInstruction}
+${EXPLAIN_CLARITY_RULES}
 
 Return ONLY a JSON object with exactly these fields:
 - "title": the concept name (string)
@@ -312,6 +332,7 @@ Be specific and concrete. Write like a brilliant friend giving a first orientati
 ${systemExtra}
 
 ${toneInstruction}
+${EXPLAIN_CLARITY_RULES}
 
 CRITICAL RULES:
 1. Do NOT re-introduce or re-explain "${parentContext}" ??? assume the user already understands it.
@@ -342,7 +363,7 @@ Be precise and specific. Every word should earn its place.`;
       },
     ],
     response_format: { type: 'json_object' },
-    temperature: 0.7,
+    temperature: explainTemp,
   });
 
   return JSON.parse(response.choices[0].message.content);
@@ -367,6 +388,9 @@ export async function deepenNode(
       ? `Write for a deep domain expert. Advanced implementation details, subtle failure modes, performance nuances, and expert-level gotchas only. Technical precision above all ? no hand-holding.`
       : `Write in the voice of a knowledgeable, warm Indian educator ? direct, confident, conversational. Use natural Indian English phrases like "basically", "actually", "you see", "only" for emphasis, and the occasional "isn't it?" or "right?". Use analogies from everyday Indian life where they fit naturally.`;
 
+  const deepenTemp =
+    mode === 'eli5' ? 0.72 : mode === 'expert' ? 0.78 : 0.5;
+
   const codeField = needsCode
     ? `- "code": a DIFFERENT, more advanced code example string (not a repeat of any basics already shown). Demonstrate an edge case, optimisation, or real-world pattern. No markdown fences.`
     : '';
@@ -375,6 +399,7 @@ export async function deepenNode(
 ${systemExtra}
 
 ${toneInstruction}
+${DEEPEN_CLARITY_RULES}
 
 The user has already read this basic summary ? DO NOT repeat it:
 "${existingSummary}"
@@ -403,7 +428,7 @@ Be precise. Every sentence must earn its place. No filler.`;
       },
     ],
     response_format: { type: 'json_object' },
-    temperature: 0.8,
+    temperature: deepenTemp,
   });
 
   return JSON.parse(response.choices[0].message.content);
