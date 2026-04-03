@@ -173,7 +173,7 @@ export function saveMode(mode) {
 }
 
 export function loadMode() {
-  return localStorage.getItem(KEYS.MODE) || 'fast';
+  return localStorage.getItem(KEYS.MODE) || 'slow';
 }
 
 // ─── Explain depth preference ─────────────────────────────────────────────────
