@@ -201,14 +201,20 @@ export function useSlowBurn({ graphData, expandedNodes, expand, expandingNodeId 
   const canGoDeeper =
     currentNode !== null &&
     currentNode.id !== 'root' &&
+    !currentNode.followUp &&
     !expandedNodes.has(currentNode.id) &&
     !isExpanding;
 
-  // "Enter Subtopics": node already expanded — enter its children without API call
+  // "Enter Subtopics": expanded branch node, or follow-up node with further follow-up replies (no API)
+  const childIdsForCurrent =
+    currentNode && graphData.links
+      ? getChildIds(currentNode.id, graphData.links)
+      : [];
   const canEnterChildren =
     currentNode !== null &&
     currentNode.id !== 'root' &&
-    expandedNodes.has(currentNode.id);
+    childIdsForCurrent.length > 0 &&
+    (expandedNodes.has(currentNode.id) || currentNode.followUp);
 
   const next = useCallback(() => {
     dispatch({ type: 'NEXT' });

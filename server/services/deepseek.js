@@ -436,6 +436,57 @@ Be precise. Every sentence must earn its place. No filler.`;
   return JSON.parse(response.choices[0].message.content);
 }
 
+/**
+ * Plain follow-up Q&A in session context. JSON wrapper only for offTopic flag + guardrail compatibility.
+ */
+export async function followUpChat({
+  branchNodeLabel,
+  anchorParentContext = '',
+  rootTopic = '',
+  sessionTopic = '',
+  groundingContext = '',
+  messages = [],
+}) {
+  const systemPrompt =
+    SAFETY_GUARDRAIL +
+    `You help a learner with follow-up questions during an exploration session.
+
+SESSION CONTEXT:
+- Main topic / session: ${sessionTopic || rootTopic || '(general)'}
+- Subtopic this thread branched from: "${branchNodeLabel}"
+- Parent context for that subtopic: "${anchorParentContext || branchNodeLabel}"
+
+The user message(s) below are a continuing chat about that subtopic within this session.
+Answer in plain, direct language (no JSON inside "reply", no required structure). You may use short paragraphs or bullets when helpful.
+
+If the user's latest question is clearly unrelated to BOTH the main session topic AND the branch subtopic (e.g. random unrelated subject), set "offTopic" to true. In that case "reply" should briefly acknowledge that and suggest they can start a fresh exploration for the new subject — still stay within safety rules.
+
+If the question is on-topic or reasonably connected, set "offTopic" to false and answer helpfully.
+
+Return ONLY a JSON object: { "reply": string, "offTopic": boolean }` +
+    sourceGroundingSuffix(groundingContext);
+
+  const apiMessages = [
+    { role: 'system', content: systemPrompt },
+    ...messages.map((m) => ({
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: m.content,
+    })),
+  ];
+
+  const response = await client.chat.completions.create({
+    model: DEEP_SEEK_CHAT_MODEL,
+    messages: apiMessages,
+    response_format: { type: 'json_object' },
+    temperature: 0.55,
+  });
+
+  const data = JSON.parse(response.choices[0].message.content);
+  const reply = typeof data.reply === 'string' ? data.reply : '';
+  const offTopic = Boolean(data.offTopic);
+  return { reply, offTopic };
+}
+
 export async function generateQuiz(nodeLabel, explanation) {
   const t0 = Date.now();
   const { summary = '', details = [], keyTakeaway = '' } = explanation;

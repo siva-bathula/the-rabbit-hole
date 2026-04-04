@@ -134,19 +134,48 @@ export function loadSessions() {
 
 // ─── Share snapshot ───────────────────────────────────────────────────────────
 // Strips caches — recipient re-fetches explanations lazily on demand.
+// Strips follow-up chat nodes — share is the main exploration only.
+
+export function stripFollowUpNodesForShare(snap) {
+  const rawNodes = snap.graphData?.nodes || [];
+  const nodes = rawNodes.filter((n) => !n.followUp);
+  const keep = new Set(nodes.map((n) => n.id));
+  const links = (snap.graphData?.links || []).filter((l) => {
+    const s = typeof l.source === 'object' ? l.source.id : l.source;
+    const t = typeof l.target === 'object' ? l.target.id : l.target;
+    return keep.has(s) && keep.has(t);
+  });
+  const expandedNodes = new Set(
+    [...(snap.expandedNodes || [])].filter((id) => keep.has(id)),
+  );
+  const parentLabelOf = new Map(
+    [...(snap.parentLabelOf || new Map()).entries()].filter(([id]) => keep.has(id)),
+  );
+  const originalPosition = new Map(
+    [...(snap.originalPosition || new Map()).entries()].filter(([id]) => keep.has(id)),
+  );
+  return {
+    ...snap,
+    graphData: { nodes, links },
+    expandedNodes,
+    parentLabelOf,
+    originalPosition,
+  };
+}
 
 export function serializeShareSnap(snap, topic) {
+  const s = stripFollowUpNodesForShare(snap);
   return {
     topic: topic || '',
-    groundingContext: snap.groundingContext || '',
+    groundingContext: s.groundingContext || '',
     graphData: {
-      nodes: snap.graphData.nodes,
-      links: normalizeLinks(snap.graphData.links),
+      nodes: s.graphData.nodes,
+      links: normalizeLinks(s.graphData.links),
     },
-    rootLabel: snap.rootLabel || '',
-    expandedNodes: [...snap.expandedNodes],
-    parentLabelOf: [...snap.parentLabelOf.entries()],
-    originalPosition: [...snap.originalPosition.entries()],
+    rootLabel: s.rootLabel || '',
+    expandedNodes: [...s.expandedNodes],
+    parentLabelOf: [...s.parentLabelOf.entries()],
+    originalPosition: [...s.originalPosition.entries()],
   };
 }
 

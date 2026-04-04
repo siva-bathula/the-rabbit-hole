@@ -44,7 +44,12 @@ function TreeNode({ item, currentNodeId, visitedIds, onNodeClick }) {
         >
           {isCurrent ? '›' : isVisited ? '✓' : '·'}
         </span>
-        <span className="truncate text-xs leading-relaxed">{node.label}</span>
+        <span
+          className={`truncate text-xs leading-relaxed ${node.followUp ? 'text-fuchsia-200/85' : ''}`}
+        >
+          {node.followUp ? '↳ ' : ''}
+          {node.label}
+        </span>
       </button>
 
       {children.length > 0 && (

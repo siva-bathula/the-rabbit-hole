@@ -11,6 +11,7 @@ import deepenRouter from './routes/deepen.js';
 import trendingRouter from './routes/trending.js';
 import quizRouter from './routes/quiz.js';
 import shareRouter from './routes/share.js';
+import { followupPostHandler } from './routes/followup.js';
 import { startTrendingRefresh } from './services/trending.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -78,6 +79,7 @@ app.use('/api/deepen', deepenRouter);
 app.use('/api/trending', trendingRouter);
 app.use('/api/quiz', quizRouter);
 app.use('/api/share', shareRouter);
+app.post('/api/followup', followupPostHandler);
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
 
 // Block well-known vulnerability scanner paths before they hit the SPA fallback.

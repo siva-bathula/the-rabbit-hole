@@ -29,6 +29,13 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
 
   useEffect(() => {
     if (!node) return;
+    if (node.followUp) {
+      setExplanation(null);
+      setIsLoading(false);
+      setError(null);
+      setDeeperContent(null);
+      return;
+    }
 
     const cacheKey = modeCacheKey(node.id, explainMode);
 
@@ -82,7 +89,7 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
       });
 
     return () => { cancelled = true; };
-  }, [node?.id, explainMode, rootTopic, sessionTopic, groundingContext]);
+  }, [node?.id, node?.followUp, explainMode, rootTopic, sessionTopic, groundingContext]);
 
   const handlePullThread = useCallback(async () => {
     if (!explanation || isPulling) return;
@@ -127,6 +134,78 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
   const handleExpand = () => {
     onExpand(node);
   };
+
+  if (node.followUp) {
+    return (
+      <>
+        <div className="fixed inset-0 z-40" onClick={onClose} />
+        <div className="fixed bottom-0 left-0 right-0 z-50 animate-slide-up">
+          <div className="mx-auto max-w-2xl">
+            <div
+              className="rounded-t-2xl border border-white/10 shadow-2xl flex flex-col"
+              style={{
+                background: 'linear-gradient(160deg, #0f0f1e 0%, #0a0a18 100%)',
+                backdropFilter: 'blur(20px)',
+                maxHeight: '85vh',
+              }}
+            >
+              <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+                <div className="w-10 h-1 rounded-full bg-white/20" />
+              </div>
+              <div className="px-6 pt-3 pb-2 border-b border-white/10 flex items-start justify-between flex-shrink-0">
+                <div>
+                  <span className="text-xs font-medium uppercase tracking-widest text-fuchsia-400/90 mb-1 block">
+                    Follow-up
+                  </span>
+                  <h2 className="text-xl font-bold text-white leading-snug">{node.followUpQuestion || node.label}</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="mt-1 p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 flex-shrink-0"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="px-6 py-5 overflow-y-auto flex-1 min-h-0">
+                <p className="text-white/35 text-xs leading-relaxed border-l-2 border-white/10 pl-3 mb-4" role="note">
+                  AI-generated follow-up answer. May be incomplete or imprecise.
+                </p>
+                <div className="text-white/85 leading-relaxed text-sm whitespace-pre-wrap">{node.followUpAnswer}</div>
+              </div>
+              <div className="px-6 pt-4 pb-4 border-t border-white/10 flex flex-col gap-2 flex-shrink-0">
+                {onAskFollowUp && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onAskFollowUp(node);
+                      onClose();
+                    }}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-medium transition-all text-purple-200/80 hover:text-white active:scale-95"
+                    style={{
+                      background: 'rgba(168,85,247,0.10)',
+                      border: '1px solid rgba(168,85,247,0.28)',
+                    }}
+                  >
+                    Continue thread
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="w-full py-2.5 rounded-xl text-sm font-medium text-white/50 hover:text-white hover:bg-white/10"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>

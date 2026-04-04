@@ -104,6 +104,7 @@ export function useGraph() {
 
   const expand = useCallback(
     async (node) => {
+      if (node.followUp) return;
       if (expandedNodes.has(node.id) || expandingNodeId) return;
 
       setExpandingNodeId(node.id);
@@ -281,6 +282,60 @@ export function useGraph() {
     expandDataCacheRef.current = new Map();
   }, []);
 
+  /** Append a follow-up chat turn as a graph node under parentId (linear thread). */
+  const addFollowUpNode = useCallback((parentId, payload) => {
+    const {
+      fullQuestion,
+      answer,
+      followUpAnchorId,
+      followUpAnchorLabel,
+    } = payload;
+    const parent = nodesRef.current.find((n) => n.id === parentId);
+    if (!parent || !fullQuestion?.trim()) return null;
+
+    const id = `fu_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
+    const parentDepth = parent.depth ?? 1;
+    const px = (parent.x ?? parent.fx ?? 0) + 95;
+    const py = (parent.y ?? parent.fy ?? 0) + 55;
+    const short =
+      fullQuestion.trim().length > 72
+        ? `${fullQuestion.trim().slice(0, 70)}…`
+        : fullQuestion.trim();
+
+    const anchorId = followUpAnchorId || parent.followUpAnchorId || parentId;
+    const anchorLabel =
+      followUpAnchorLabel || parent.followUpAnchorLabel || parent.label;
+
+    const newNode = {
+      id,
+      label: short,
+      group: 'followup',
+      followUp: true,
+      followUpQuestion: fullQuestion.trim(),
+      followUpAnswer: answer || '',
+      followUpAnchorId: anchorId,
+      followUpAnchorLabel: anchorLabel,
+      x: px,
+      y: py,
+      fx: px,
+      fy: py,
+      vx: 0,
+      vy: 0,
+      depth: parentDepth + 1,
+    };
+
+    parentLabelOfRef.current.set(id, parent.label);
+    const newLink = { source: parentId, target: id };
+    nodesRef.current = [...nodesRef.current, newNode];
+    linksRef.current = [...linksRef.current, newLink];
+    setGraphData({ nodes: nodesRef.current, links: linksRef.current });
+    return { id };
+  }, []);
+
+  const getParentLabelForNode = useCallback((nodeId) => {
+    return parentLabelOfRef.current.get(nodeId) || rootLabelRef.current || '';
+  }, []);
+
   return {
     graphData,
     expandedNodes,
@@ -297,6 +352,8 @@ export function useGraph() {
     reset,
     snapshot,
     restore,
+    addFollowUpNode,
+    getParentLabelForNode,
     explanationCache: explanationCacheRef,
   };
 }

@@ -432,6 +432,34 @@ function ContentArea({ node, parentContext, rootLabel, sessionTopic, groundingCo
   );
 }
 
+function FollowUpSlowBurnContent({ node, onContinueThread }) {
+  return (
+    <div className="max-w-2xl mx-auto px-8 py-8">
+      <span className="text-xs font-semibold uppercase tracking-widest text-fuchsia-400/90 mb-2 block">
+        Follow-up
+      </span>
+      <h1 className="text-2xl font-bold text-white leading-tight mb-6">{node.followUpQuestion || node.label}</h1>
+      <p className="text-white/35 text-xs leading-relaxed border-l-2 border-white/10 pl-3 mb-4" role="note">
+        AI-generated follow-up answer. May be incomplete or imprecise.
+      </p>
+      <p className="text-white/80 leading-relaxed text-base whitespace-pre-wrap">{node.followUpAnswer}</p>
+      {onContinueThread && (
+        <button
+          type="button"
+          onClick={() => onContinueThread(node)}
+          className="mt-8 w-full sm:w-auto flex items-center justify-center gap-2 py-2.5 px-5 rounded-xl text-sm font-medium transition-all text-purple-200/80 hover:text-white"
+          style={{
+            background: 'rgba(168,85,247,0.10)',
+            border: '1px solid rgba(168,85,247,0.28)',
+          }}
+        >
+          Continue thread
+        </button>
+      )}
+    </div>
+  );
+}
+
 export default function SlowBurnView({
   graphData,
   expandedNodes,
@@ -533,7 +561,9 @@ export default function SlowBurnView({
         </button>
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto">
-          {currentNode ? (
+          {currentNode?.followUp ? (
+            <FollowUpSlowBurnContent node={currentNode} onContinueThread={onAskFollowUp} />
+          ) : currentNode ? (
             <ContentArea
               node={currentNode}
               parentContext={parentContext}
@@ -562,7 +592,7 @@ export default function SlowBurnView({
           }}
         >
           {/* Ask follow-up — shown for all non-root nodes */}
-          {onAskFollowUp && currentNode && currentNode.id !== 'root' && (
+          {onAskFollowUp && currentNode && currentNode.id !== 'root' && !currentNode.followUp && (
             <button
               onClick={() => onAskFollowUp(currentNode)}
               className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl
@@ -578,6 +608,20 @@ export default function SlowBurnView({
                   d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               Ask a follow-up
+            </button>
+          )}
+          {onAskFollowUp && currentNode?.followUp && (
+            <button
+              onClick={() => onAskFollowUp(currentNode)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl
+                text-sm font-medium transition-all active:scale-95
+                text-purple-200/80 hover:text-white"
+              style={{
+                background: 'rgba(168,85,247,0.10)',
+                border: '1px solid rgba(168,85,247,0.28)',
+              }}
+            >
+              Continue thread
             </button>
           )}
 

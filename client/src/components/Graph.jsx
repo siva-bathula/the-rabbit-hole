@@ -18,6 +18,7 @@ const GROUP_COLORS = {
   related:     '#06B6D4', // cyan
   example:     '#10B981', // emerald
   mechanism:   '#8B5CF6', // violet
+  followup:    '#E879F9', // fuchsia — in-session Q&A thread
 };
 
 function getDisplayLabel(label, isMobile) {

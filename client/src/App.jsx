@@ -4,7 +4,7 @@ import Graph from './components/Graph.jsx';
 import NodeOverlay from './components/NodeOverlay.jsx';
 import SlowBurnView from './components/SlowBurnView.jsx';
 import SessionsDrawer from './components/SessionsDrawer.jsx';
-import FollowUpModal from './components/FollowUpModal.jsx';
+import FollowUpChatPanel from './components/FollowUpChatPanel.jsx';
 import { useGraph } from './hooks/useGraph.js';
 import QuizOverlay from './components/QuizOverlay.jsx';
 import {
@@ -139,6 +139,7 @@ export default function App() {
     snapshot,
     restore,
     explanationCache,
+    addFollowUpNode,
   } = useGraph();
 
   // ── Persistence effects ────────────────────────────────────────────────────
@@ -350,35 +351,25 @@ export default function App() {
     setShareId(null);
   }, [snapshot, graphData.nodes.length, currentTopic, mode, activeSessionId, shareId, reset, setSelectedNode]);
 
-  // Submit from the follow-up modal: save current session, start new exploration in-place
-  const handleFollowUpSubmit = useCallback(
-    async (topic) => {
+  const openFollowUpPanel = useCallback((node) => {
+    setFollowUpNode(node);
+    setSelectedNode(null);
+  }, []);
+
+  /** Start a brand-new exploration from a follow-up question (off-topic path). */
+  const handleNewExplorationFromFollowUp = useCallback(
+    (topic) => {
+      const trimmed = topic.trim();
+      if (!trimmed) return;
+      saveToHistory(trimmed);
       setFollowUpNode(null);
-      setSelectedNode(null);
-      // Save current graph before wiping it
-      if (graphData.nodes.length > 0) {
-        const snap = snapshot();
-        const session = buildSession(currentTopic, mode, snap, shareId);
-        setSessions((prev) => {
-          if (activeSessionId) {
-            const exists = prev.some((s) => s.id === activeSessionId);
-            if (exists) {
-              return prev.map((s) =>
-                s.id === activeSessionId ? { ...session, id: activeSessionId } : s,
-              );
-            }
-          }
-          return upsertSessionByTopic(prev, session);
-        });
-      }
-      saveToHistory(topic);
-      setCurrentTopic(topic);
+      setCurrentTopic(trimmed);
       setActiveSessionId(null);
       setShareId(null);
-      await explore(topic);
-      // Stay on graph phase — no navigation needed
+      explore(trimmed);
+      setPhase('graph');
     },
-    [snapshot, graphData.nodes.length, currentTopic, mode, activeSessionId, shareId, explore, saveToHistory, setSelectedNode],
+    [explore, saveToHistory],
   );
 
   const handleSearch = useCallback(
@@ -510,7 +501,7 @@ export default function App() {
                   onExplainModeChange={setExplainMode}
                   onExplanationCached={persistLive}
                   onQuizMe={(node, explanation) => setQuizTarget({ node, explanation, rootTopic: rootLabel })}
-                  onAskFollowUp={(node) => { setSelectedNode(null); setFollowUpNode(node); }}
+                  onAskFollowUp={openFollowUpPanel}
                 />
               )}
 
@@ -523,6 +514,7 @@ export default function App() {
                   { color: '#F59E0B', label: 'Root topic' },
                   { color: '#22D3EE', label: 'Expanded' },
                   { color: '#A855F7', label: 'Selected / Theory' },
+                  { color: '#E879F9', label: 'Follow-up chat' },
                   { color: '#22C55E', label: 'Application' },
                   { color: '#F97316', label: 'History' },
                   { color: '#3B82F6', label: 'Core / Other' },
@@ -556,7 +548,7 @@ export default function App() {
                 explainMode={explainMode}
                 onExplainModeChange={setExplainMode}
                 onQuizMe={(node, explanation) => setQuizTarget({ node, explanation, rootTopic: rootLabel })}
-                onAskFollowUp={(node) => setFollowUpNode(node)}
+                onAskFollowUp={openFollowUpPanel}
               />
             </div>
           )}
@@ -708,12 +700,17 @@ export default function App() {
         onClearAll={handleClearAllSessions}
       />
 
-      {/* Follow-up modal — stays on the graph, saves current session */}
       {followUpNode && (
-        <FollowUpModal
+        <FollowUpChatPanel
           triggerNode={followUpNode}
-          onSubmit={handleFollowUpSubmit}
+          graphData={graphData}
+          rootLabel={rootLabel}
+          sessionTopic={currentTopic}
+          groundingContext={groundingContext}
           onClose={() => setFollowUpNode(null)}
+          addFollowUpNode={addFollowUpNode}
+          onStartNewExploration={handleNewExplorationFromFollowUp}
+          onPersist={persistLive}
         />
       )}
 
