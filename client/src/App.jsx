@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import SearchBar, { getRandomN, STATIC_TOPICS } from './components/SearchBar.jsx';
 import Graph from './components/Graph.jsx';
 import NodeOverlay from './components/NodeOverlay.jsx';
@@ -155,6 +155,17 @@ export default function App() {
   } = useGraph();
 
   const { pathIds, appendStep, resetPath, replacePath, canReplay } = useExplorationPath();
+
+  /** Bumped only when the graph is replaced (explore, restore, new search) — not when saving a session id. */
+  const [graphInteractionEpoch, setGraphInteractionEpoch] = useState(0);
+  const bumpGraphEpoch = useCallback(() => {
+    setGraphInteractionEpoch((n) => n + 1);
+  }, []);
+
+  const explorationReadIds = useMemo(
+    () => [...new Set(filterPathToGraph(pathIds, graphData.nodes))],
+    [pathIds, graphData.nodes],
+  );
   const [pathReplayOpen, setPathReplayOpen] = useState(false);
   const [replayStepIndex, setReplayStepIndex] = useState(0);
 
@@ -241,6 +252,7 @@ export default function App() {
           restore(snap);
           setCurrentTopic(data.topic || '');
           setPhase('graph');
+          setGraphInteractionEpoch((n) => n + 1);
         })
         .catch((err) => console.error('[share restore]', err))
         .finally(() => { restoredRef.current = true; });
@@ -258,6 +270,7 @@ export default function App() {
       setPhase('graph');
       if (saved.activeSessionId) setActiveSessionId(saved.activeSessionId);
       if (saved.shareId) setShareId(saved.shareId);
+      setGraphInteractionEpoch((n) => n + 1);
     }
     restoredRef.current = true;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -334,10 +347,12 @@ export default function App() {
       // Bump lastUsedAt so the list stays sorted by most-recently-used
       return prev.map((s) => s.id === id ? { ...s, lastUsedAt: Date.now() } : s);
     });
+    bumpGraphEpoch();
   }, [
     snapshot,
     restore,
     replacePath,
+    bumpGraphEpoch,
     graphData.nodes.length,
     currentTopic,
     mode,
@@ -419,12 +434,13 @@ export default function App() {
     setPrefillTopic(nodeTopic);
     reset();
     resetSessionPath();
+    bumpGraphEpoch();
     setPhase('search');
     setStaticPicks(getRandomN(STATIC_TOPICS, 4));
     setCurrentTopic('');
     setActiveSessionId(null);
     setShareId(null);
-  }, [snapshot, graphData.nodes.length, currentTopic, mode, activeSessionId, shareId, pathIds, reset, resetSessionPath, setSelectedNode]);
+  }, [snapshot, graphData.nodes.length, currentTopic, mode, activeSessionId, shareId, pathIds, reset, resetSessionPath, setSelectedNode, bumpGraphEpoch]);
 
   const openFollowUpPanel = useCallback((node) => {
     setFollowUpNode(node);
@@ -442,10 +458,12 @@ export default function App() {
       setActiveSessionId(null);
       setShareId(null);
       resetSessionPath();
-      explore(trimmed);
+      explore(trimmed).then(() => {
+        bumpGraphEpoch();
+      });
       setPhase('graph');
     },
-    [explore, resetSessionPath, saveToHistory],
+    [explore, resetSessionPath, saveToHistory, bumpGraphEpoch],
   );
 
   const handleSearch = useCallback(
@@ -471,13 +489,14 @@ export default function App() {
               fromTrending,
             };
       const result = await explore(payload);
+      bumpGraphEpoch();
       if (result?.fromTrending && mode === 'fast' && result.rootNode) {
         setSelectedNode(result.rootNode);
       }
       setPhase('graph');
       setActiveSessionId(null);
     },
-    [explore, resetSessionPath, saveToHistory, mode, setSelectedNode],
+    [explore, resetSessionPath, saveToHistory, mode, setSelectedNode, bumpGraphEpoch],
   );
 
   const handleNodeClick = useCallback(
@@ -509,10 +528,11 @@ export default function App() {
       setCurrentTopic(topic);
       resetSessionPath();
       await explore(topic);
+      bumpGraphEpoch();
       setPhase('graph');
       setActiveSessionId(null);
     },
-    [explore, resetSessionPath, setSelectedNode, saveToHistory],
+    [explore, resetSessionPath, setSelectedNode, saveToHistory, bumpGraphEpoch],
   );
 
   const handleModeToggle = useCallback(() => {
@@ -539,6 +559,7 @@ export default function App() {
     clearLive(); // user explicitly left — don't auto-restore this graph
     reset();
     resetSessionPath();
+    bumpGraphEpoch();
     setPhase('search');
     setStaticPicks(getRandomN(STATIC_TOPICS, 4));
     setCurrentTopic('');
@@ -575,6 +596,7 @@ export default function App() {
                 expandedNodes={expandedNodes}
                 expandingNodeId={expandingNodeId}
                 onNodeClick={handleNodeClick}
+                readNodeIds={explorationReadIds}
               />
 
               {selectedNode && (
@@ -633,6 +655,8 @@ export default function App() {
                 expandedNodes={expandedNodes}
                 expand={expand}
                 expandingNodeId={expandingNodeId}
+                graphSessionKey={String(graphInteractionEpoch)}
+                seedVisitedIds={explorationReadIds}
                 startWithRoot={isNewsAnchoredSessionTopic(currentTopic)}
                 rootLabel={rootLabel}
                 sessionTopic={currentTopic}

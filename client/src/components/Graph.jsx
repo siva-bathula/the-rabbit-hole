@@ -1,4 +1,12 @@
-import { useRef, useEffect, useCallback, useState, forwardRef, useImperativeHandle } from 'react';
+import {
+  useRef,
+  useEffect,
+  useCallback,
+  useState,
+  useMemo,
+  forwardRef,
+  useImperativeHandle,
+} from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 
 const NODE_COLORS = {
@@ -105,12 +113,15 @@ const Graph = forwardRef(function Graph(
     onNodeClick,
     /** { pathIds: string[], stepIndex: number } or null — exploration path replay */
     explorationReplay = null,
+    /** Node ids the user has opened on the exploration path — small read tick on canvas */
+    readNodeIds = [],
     widthOverride = null,
     heightOverride = null,
   },
   ref,
 ) {
   const fgRef = useRef(null);
+  const readSet = useMemo(() => new Set(readNodeIds), [readNodeIds]);
   /** react-force-graph-2d ref does not expose graphData(); use React props via ref for lookups. */
   const graphDataRef = useRef(graphData);
   graphDataRef.current = graphData;
@@ -377,6 +388,17 @@ const Graph = forwardRef(function Graph(
       ctx.lineWidth = (isSelected ? 2.5 : 1.5) / globalScale;
       ctx.stroke();
 
+      if (!replayVisual && readSet.has(node.id)) {
+        const tickSize = Math.max(11 / globalScale, 4);
+        ctx.save();
+        ctx.font = `bold ${tickSize}px Inter, system-ui, sans-serif`;
+        ctx.fillStyle = 'rgba(74,222,128,0.92)';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('✓', node.x + r * 0.82, node.y - r * 0.82);
+        ctx.restore();
+      }
+
       // Unexpanded leaf indicator: small "+" mark
       const isLeaf = !expandedNodes.has(node.id) && node.id !== 'root';
       if (isLeaf) {
@@ -408,7 +430,7 @@ const Graph = forwardRef(function Graph(
       ctx.fillText(labelText, node.x, node.y + r + 4 / globalScale);
       ctx.restore();
     },
-    [selectedNode, expandedNodes, expandingNodeId, isMobile, replayVisual]
+    [selectedNode, expandedNodes, expandingNodeId, isMobile, replayVisual, readSet]
   );
 
   const nodeById = useCallback(

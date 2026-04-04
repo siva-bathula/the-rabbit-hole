@@ -50,13 +50,20 @@ function reducer(state, action) {
       return { ...initialState, visitedIds: new Set() };
 
     case 'INIT_QUEUE': {
-      const firstId = action.payload[0];
+      const { queue, seedVisitedIds = [], graphNodeIds = [] } = action.payload;
+      const valid = new Set(graphNodeIds);
+      let vis = new Set();
+      for (const id of seedVisitedIds) {
+        if (id && valid.has(id)) vis.add(id);
+      }
+      const firstId = queue[0];
+      vis = markVisited(vis, firstId);
       return {
         ...state,
-        slowQueue: action.payload,
+        slowQueue: queue,
         slowIndex: 0,
         levelStack: [],
-        visitedIds: markVisited(new Set(), firstId),
+        visitedIds: vis,
       };
     }
 
@@ -119,6 +126,10 @@ export function useSlowBurn({
   expand,
   expandingNodeId,
   startWithRoot = false,
+  /** Distinguish saved session vs live vs share so same node-count switches re-init slow burn */
+  graphSessionKey = 'default',
+  /** Unique node ids from persisted exploration path — seed FolderTree "read" ticks on load */
+  seedVisitedIds = [],
 }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
@@ -132,14 +143,26 @@ export function useSlowBurn({
   const startWithRootRef = useRef(startWithRoot);
   startWithRootRef.current = startWithRoot;
 
+  const seedVisitedIdsRef = useRef(seedVisitedIds);
+  seedVisitedIdsRef.current = seedVisitedIds;
+
   // nodeId currently waiting for expand() to complete
   const pendingExpandRef = useRef(null);
   const prevNodeCountRef = useRef(0);
+  const prevGraphSessionKeyRef = useRef(graphSessionKey);
 
   // React to graphData node count changing (initial load or expand completing)
   useEffect(() => {
     const { nodes, links } = graphDataRef.current;
     const newCount = nodes.length;
+
+    const sessionKeyChanged = graphSessionKey !== prevGraphSessionKeyRef.current;
+    if (sessionKeyChanged) {
+      prevGraphSessionKeyRef.current = graphSessionKey;
+      dispatch({ type: 'RESET' });
+      prevNodeCountRef.current = 0;
+      pendingExpandRef.current = null;
+    }
 
     if (newCount === 0) {
       dispatch({ type: 'RESET' });
@@ -161,17 +184,27 @@ export function useSlowBurn({
       return;
     }
 
-    // Initial load: children of root; trending/news sessions visit root first for main story context
-    if (stateRef.current.slowQueue.length === 0) {
+    // Initial load: children of root; trending/news sessions visit root first for main story context.
+    // After sessionKeyChanged, stateRef may still see pre-RESET slowQueue until next paint — use sessionKeyChanged to force init.
+    const needInitQueue = sessionKeyChanged || stateRef.current.slowQueue.length === 0;
+    if (needInitQueue) {
       const rootChildren = getChildIds('root', links);
       if (rootChildren.length > 0) {
         const queue = startWithRootRef.current
           ? ['root', ...rootChildren]
           : rootChildren;
-        dispatch({ type: 'INIT_QUEUE', payload: queue });
+        const graphNodeIds = nodes.map((n) => n.id);
+        dispatch({
+          type: 'INIT_QUEUE',
+          payload: {
+            queue,
+            seedVisitedIds: seedVisitedIdsRef.current,
+            graphNodeIds,
+          },
+        });
       }
     }
-  }, [graphData.nodes.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [graphData.nodes.length, graphSessionKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derived current node
   const currentNodeId = state.slowQueue[state.slowIndex] ?? null;
