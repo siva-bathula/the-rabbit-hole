@@ -1,7 +1,17 @@
 import { Router } from 'express';
 import { generateNodes } from '../services/deepseek.js';
+import {
+  fetchArticlePlainText,
+  mergeArticleIntoGrounding,
+  isSafeHttpUrlForServerFetch,
+} from '../services/articleFetch.js';
 
 const router = Router();
+
+/** Same rule as deepseek isNewsAnchoredTopic — trending "label — headline" sessions only. */
+function isNewsAnchoredTopic(topic) {
+  return typeof topic === 'string' && /\s[—–]\s/.test(topic);
+}
 
 /**
  * Defensive cleanup applied to every AI response before it reaches the client.
@@ -56,15 +66,28 @@ function sanitizeGraph(data) {
 }
 
 router.post('/', async (req, res) => {
-  const { topic, groundingContext } = req.body;
+  const { topic, groundingContext, articleUrl } = req.body;
 
   if (!topic?.trim()) {
     return res.status(400).json({ error: 'Topic is required' });
   }
 
   try {
-    const raw = await generateNodes(topic.trim(), {
-      groundingContext: typeof groundingContext === 'string' ? groundingContext : '',
+    const topicTrim = topic.trim();
+    const base =
+      typeof groundingContext === 'string' ? groundingContext.trim() : '';
+
+    let effectiveGrounding = base;
+    const url = typeof articleUrl === 'string' ? articleUrl.trim() : '';
+    if (isNewsAnchoredTopic(topicTrim) && url && isSafeHttpUrlForServerFetch(url)) {
+      const fetched = await fetchArticlePlainText(url);
+      if (fetched.ok && fetched.text) {
+        effectiveGrounding = mergeArticleIntoGrounding(base, fetched.text);
+      }
+    }
+
+    const raw = await generateNodes(topicTrim, {
+      groundingContext: effectiveGrounding,
     });
 
     if (!raw.nodes || !raw.edges) {
@@ -72,7 +95,7 @@ router.post('/', async (req, res) => {
     }
 
     const data = sanitizeGraph(raw);
-    res.json(data);
+    res.json({ ...data, groundingContext: effectiveGrounding });
   } catch (err) {
     console.error('[explore]', err.message);
     res.status(500).json({ error: 'Failed to generate knowledge graph' });

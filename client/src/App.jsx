@@ -16,6 +16,7 @@ import {
   saveExplainMode, loadExplainMode,
   serializeShareSnap, deserializeShareSnap,
 } from './lib/persist.js';
+import { isNewsAnchoredSessionTopic } from './lib/newsTopic.js';
 
 function buildSession(topic, mode, snap, shareId = null, explorationPathIds = []) {
   const previewNodes = snap.graphData.nodes
@@ -449,19 +450,34 @@ export default function App() {
 
   const handleSearch = useCallback(
     async (input) => {
-      // Accept either a plain string or {query, displayLabel, groundingContext?} from trending chips
+      // Plain string, or trending chip: { query, displayLabel, groundingContext?, articleUrl?, fromTrending? }
       const displayLabel = typeof input === 'string' ? input : input.displayLabel;
       const query = typeof input === 'string' ? input : input.query;
       const gc = typeof input === 'string' ? '' : (input.groundingContext || '');
+      const articleUrl =
+        typeof input === 'string' ? '' : String(input.articleUrl || '').trim();
+      const fromTrending = typeof input === 'object' && Boolean(input.fromTrending);
       saveToHistory(displayLabel);
       setPrefillTopic('');
       setCurrentTopic(query);
       resetSessionPath();
-      await explore(gc ? { topic: query, groundingContext: gc } : query);
+      const payload =
+        typeof input === 'string'
+          ? input
+          : {
+              topic: query,
+              groundingContext: gc,
+              articleUrl,
+              fromTrending,
+            };
+      const result = await explore(payload);
+      if (result?.fromTrending && mode === 'fast' && result.rootNode) {
+        setSelectedNode(result.rootNode);
+      }
       setPhase('graph');
       setActiveSessionId(null);
     },
-    [explore, resetSessionPath, saveToHistory],
+    [explore, resetSessionPath, saveToHistory, mode, setSelectedNode],
   );
 
   const handleNodeClick = useCallback(
@@ -617,6 +633,7 @@ export default function App() {
                 expandedNodes={expandedNodes}
                 expand={expand}
                 expandingNodeId={expandingNodeId}
+                startWithRoot={isNewsAnchoredSessionTopic(currentTopic)}
                 rootLabel={rootLabel}
                 sessionTopic={currentTopic}
                 groundingContext={groundingContext}

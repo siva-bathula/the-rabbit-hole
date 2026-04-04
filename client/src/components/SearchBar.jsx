@@ -324,6 +324,8 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, ses
                         const label = typeof t === 'string' ? t : t.label;
                         const headline = typeof t === 'string' ? t : (t.headline || t.label);
                         const groundingContext = typeof t === 'string' ? '' : (t.grounding || '');
+                        const articleUrl =
+                          typeof t === 'string' ? '' : String(t.link || '').trim();
                         return (
                           <button
                             key={`${label}::${headline.slice(0, 48)}`}
@@ -332,6 +334,8 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, ses
                                 query: `${label} — ${headline}`,
                                 displayLabel: label,
                                 groundingContext,
+                                articleUrl,
+                                fromTrending: true,
                               })
                             }
                             title={headline}

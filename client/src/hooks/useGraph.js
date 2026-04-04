@@ -46,7 +46,12 @@ export function useGraph() {
 
   const explore = useCallback(async (payload) => {
     const topic = typeof payload === 'string' ? payload : payload.topic;
-    const groundingContext = typeof payload === 'string' ? '' : (payload.groundingContext || '');
+    const groundingContext =
+      typeof payload === 'string' ? '' : (payload.groundingContext || '');
+    const articleUrl =
+      typeof payload === 'string' ? '' : String(payload.articleUrl || '').trim();
+    const fromTrending =
+      typeof payload === 'object' && Boolean(payload.fromTrending);
 
     setIsExploring(true);
     setError(null);
@@ -68,10 +73,19 @@ export function useGraph() {
       const res = await fetch('/api/explore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic, groundingContext }),
+        body: JSON.stringify({
+          topic,
+          groundingContext,
+          articleUrl,
+          fromTrending,
+        }),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Server error');
       const data = await res.json();
+
+      if (typeof data.groundingContext === 'string') {
+        groundingContextRef.current = data.groundingContext;
+      }
 
       const nodes = (data.nodes || []).map((n) => ({
         ...n,
@@ -95,8 +109,14 @@ export function useGraph() {
       nodesRef.current = nodes;
       linksRef.current = links;
       setGraphData({ nodes, links });
+
+      return {
+        rootNode: rootNode ?? null,
+        fromTrending,
+      };
     } catch (err) {
       setError(err.message);
+      return null;
     } finally {
       setIsExploring(false);
     }

@@ -113,7 +113,13 @@ function reducer(state, action) {
   }
 }
 
-export function useSlowBurn({ graphData, expandedNodes, expand, expandingNodeId }) {
+export function useSlowBurn({
+  graphData,
+  expandedNodes,
+  expand,
+  expandingNodeId,
+  startWithRoot = false,
+}) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   // Refs so effects always read the latest values without needing them as deps
@@ -122,6 +128,9 @@ export function useSlowBurn({ graphData, expandedNodes, expand, expandingNodeId 
 
   const graphDataRef = useRef(graphData);
   graphDataRef.current = graphData;
+
+  const startWithRootRef = useRef(startWithRoot);
+  startWithRootRef.current = startWithRoot;
 
   // nodeId currently waiting for expand() to complete
   const pendingExpandRef = useRef(null);
@@ -152,11 +161,14 @@ export function useSlowBurn({ graphData, expandedNodes, expand, expandingNodeId 
       return;
     }
 
-    // Initial load: queue root's direct children
+    // Initial load: children of root; trending/news sessions visit root first for main story context
     if (stateRef.current.slowQueue.length === 0) {
       const rootChildren = getChildIds('root', links);
       if (rootChildren.length > 0) {
-        dispatch({ type: 'INIT_QUEUE', payload: rootChildren });
+        const queue = startWithRootRef.current
+          ? ['root', ...rootChildren]
+          : rootChildren;
+        dispatch({ type: 'INIT_QUEUE', payload: queue });
       }
     }
   }, [graphData.nodes.length]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -461,6 +461,8 @@ export default function SlowBurnView({
   expandedNodes,
   expand,
   expandingNodeId,
+  /** When true (news-anchored topic), first card is root before siblings. */
+  startWithRoot = false,
   rootLabel,
   sessionTopic = '',
   groundingContext = '',
@@ -493,7 +495,7 @@ export default function SlowBurnView({
     canGoDeeper,
     canEnterChildren,
     isExpanding,
-  } = useSlowBurn({ graphData, expandedNodes, expand, expandingNodeId });
+  } = useSlowBurn({ graphData, expandedNodes, expand, expandingNodeId, startWithRoot });
 
   useEffect(() => {
     if (currentNode?.id && onExplorationStep) onExplorationStep(currentNode.id);
