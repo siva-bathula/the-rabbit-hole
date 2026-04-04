@@ -78,6 +78,7 @@ const EXPLAIN_CLARITY_RULES = `
 CLARITY AND HONESTY:
 - Each "details" bullet must add a distinct idea; do not restate the summary, do not echo the node title as empty filler, and do not pad with generic platitudes.
 - Do not state specific years, statistics, or direct quotes unless you are confident they are accurate and widely accepted; when unsure, use phrasing like "typically", "often", "in many cases", or "one common pattern".
+- Avoid extended analogies, metaphors, and "it's like..." stories; they make the text heavy for beginners. Prefer short sentences and plain vocabulary. Define any necessary technical term in one plain line without a figurative comparison.
 - Do not reuse the same metaphor or catchphrase across summary, details, and keyTakeaway.`;
 
 const DEEPEN_CLARITY_RULES = `
@@ -85,7 +86,8 @@ const DEEPEN_CLARITY_RULES = `
 CLARITY AND HONESTY:
 - Each advancedInsights string must be a distinct, non-obvious point; do not paraphrase the user's summary above and do not repeat basic definitions already implied by the topic.
 - Where practice varies, say so ("often", "in many codebases", "depends on context") instead of false precision.
-- Do not invent exact figures, dates, or attributed quotes.`;
+- Do not invent exact figures, dates, or attributed quotes.
+- Keep insights plain and precise: short sentences, minimal jargon (or define it briefly). Avoid extended metaphors and "it's like..." padding.`;
 
 /** RSS / session grounding text appended to the user message (not Wikipedia). */
 function sourceGroundingSuffix(groundingContext) {
@@ -303,10 +305,10 @@ export async function explainNode(
 
   const toneInstruction =
     mode === 'eli5'
-      ? `Write like you're explaining to a very smart, curious 10-year-old. Use simple everyday words ? absolutely no jargon or technical terms unless you immediately explain them in one fun sentence. Short, punchy sentences. Make it exciting and easy to follow. Use analogies from things a kid in India knows: cricket, school tiffin, Auto-rickshaws, Bollywood, or superheroes. Every explanation should make the reader go "ooh, that makes sense!"`
+      ? `SIMPLE (ELI5) MODE — The reader wants the easiest wording, not a childish voice. Write as a clear adult using everyday vocabulary, short sentences, and minimal jargon (define any necessary term in one plain line). Do not talk down, use baby talk, or pretend to be a kid. Explain ideas directly—no extended "it's like..." metaphors.`
       : mode === 'expert'
-      ? `Write for a domain expert who already has strong foundational knowledge. Use precise technical terminology without simplification. Skip basic definitions and introductory context entirely. Focus on mechanisms, edge cases, performance characteristics, design trade-offs, and non-obvious nuances a senior practitioner would find genuinely insightful. Be direct and technically rigorous ? every sentence must add real value.`
-      : `Write in the voice of a knowledgeable, warm Indian educator ? think of a brilliant senior colleague from an IIT or a seasoned professional explaining things over chai. Use natural Indian English: phrases like "basically", "actually", "you see", "only" for emphasis, and the occasional "isn't it?" or "right?" to keep it conversational. Where it fits naturally, use analogies from everyday Indian life ? cricket, local markets, traffic, tiffin boxes ? but never force them. Be direct, confident, and make the reader feel like they are getting the real explanation, not a textbook answer.`;
+      ? `EXPERT MODE — The reader wants deep, descriptive content. Assume strong prior knowledge: use precise technical terminology, skip hand-holding and basic definitions. Be thorough and substantive—longer sentences and richer detail are appropriate. Cover mechanisms, edge cases, performance, trade-offs, and non-obvious nuances a senior practitioner would value. Avoid filler metaphors; state mechanisms plainly.`
+      : `NORMAL MODE — The typical reader: balanced length and quality—not oversimplified, not a specialist treatise. Use clear, natural language (warm Indian English is fine: "basically", "actually", "you see", "only", occasional "isn't it?" or "right?"). Standard depth: a solid overview with real substance. No extended analogies or whimsical comparisons; at most one short factual example if it helps.`;
 
   const explainTemp =
     mode === 'eli5' ? 0.68 : mode === 'expert' ? 0.72 : 0.42;
@@ -327,7 +329,7 @@ Return ONLY a JSON object with exactly these fields:
 ${learnMoreField}
 ${codeField}
 
-Be specific and concrete. Write like a brilliant friend giving a first orientation to the topic.`
+Be specific and concrete. Match the chosen mode: Simple = easiest words; Normal = balanced; Expert = deep and descriptive.`
     : SAFETY_GUARDRAIL_BRIEF + `You are a clear, engaging educator. The user is exploring "${nodeLabel}" as a subtopic within "${parentContext}".
 ${systemExtra}
 
@@ -348,7 +350,7 @@ Return ONLY a JSON object with exactly these fields:
 ${learnMoreField}
 ${codeField}
 
-Be precise and specific. Every word should earn its place.`;
+Be precise and specific. Every word should earn its place. Match Simple / Normal / Expert as above.`;
 
   const g = sourceGroundingSuffix(groundingContext);
   const response = await client.chat.completions.create({
@@ -383,10 +385,10 @@ export async function deepenNode(
 
   const toneInstruction =
     mode === 'eli5'
-      ? `Still writing for a curious 10-year-old, but now revealing the cool hidden stuff ? why things are built this way, surprising facts, and "wow, really?!" moments. Keep using simple words and fun analogies. No jargon.`
+      ? `SIMPLE (ELI5) DEEPEN — Same as explain: easiest vocabulary for an adult reader, not a child persona. Surface the hidden "why" and non-obvious points using short plain sentences. No unexplained jargon. No extended metaphors.`
       : mode === 'expert'
-      ? `Write for a deep domain expert. Advanced implementation details, subtle failure modes, performance nuances, and expert-level gotchas only. Technical precision above all ? no hand-holding.`
-      : `Write in the voice of a knowledgeable, warm Indian educator ? direct, confident, conversational. Use natural Indian English phrases like "basically", "actually", "you see", "only" for emphasis, and the occasional "isn't it?" or "right?". Use analogies from everyday Indian life where they fit naturally.`;
+      ? `EXPERT DEEPEN — Maximum depth and description for specialists. Dense, substantive insights; technical precision; implementation detail, failure modes, and trade-offs. Each insight can be longer and more detailed than in Normal mode. No filler metaphors.`
+      : `NORMAL DEEPEN — Go meaningfully deeper than the summary with balanced length: substantive for a typical reader, not a thesis. Clear conversational tone; avoid extended analogies.`;
 
   const deepenTemp =
     mode === 'eli5' ? 0.72 : mode === 'expert' ? 0.78 : 0.5;
@@ -408,11 +410,9 @@ Your job is to go significantly deeper. Focus on:
 1. Non-obvious nuances, edge cases, and gotchas practitioners actually run into
 2. Why it works the way it does (the "why", not just the "what")
 3. Advanced patterns, trade-offs, or design decisions
-4. A memorable real-world analogy or mental model if one applies
 
 Return ONLY a JSON object with exactly these fields:
-- "advancedInsights": array of 3-5 strings, each a meaty advanced insight (NOT obvious facts) ? these should feel like tips from a senior engineer or professor
-- "analogy": a single vivid analogy or mental model string that makes the concept click (or null if nothing natural fits)
+- "advancedInsights": array of 3-5 strings, each a meaty advanced insight (NOT obvious facts). Simple mode: shorter plain strings. Normal mode: balanced length. Expert mode: longer, denser, highly descriptive strings. Write plainly without metaphor padding.
 ${codeField}
 
 Be precise. Every sentence must earn its place. No filler.`;
@@ -458,6 +458,7 @@ SESSION CONTEXT:
 
 The user message(s) below are a continuing chat about that subtopic within this session.
 Answer in plain, direct language (no JSON inside "reply", no required structure). You may use short paragraphs or bullets when helpful.
+Prefer simple words. Avoid extended metaphors and "it's like..." stories unless the user explicitly asks for an analogy.
 
 If the user's latest question is clearly unrelated to BOTH the main session topic AND the branch subtopic (e.g. random unrelated subject), set "offTopic" to true. In that case "reply" should briefly acknowledge that and suggest they can start a fresh exploration for the new subject — still stay within safety rules.
 

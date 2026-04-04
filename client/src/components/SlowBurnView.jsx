@@ -377,15 +377,6 @@ function ContentArea({ node, parentContext, rootLabel, sessionTopic, groundingCo
                 </h3>
               </div>
 
-              {deeperContent.analogy && (
-                <div
-                  className="px-4 py-3 rounded-xl text-sm text-white/75 leading-relaxed italic"
-                  style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.15)' }}
-                >
-                  {deeperContent.analogy}
-                </div>
-              )}
-
               {deeperContent.advancedInsights?.length > 0 && (
                 <ul className="space-y-3">
                   {deeperContent.advancedInsights.map((insight, i) => (
