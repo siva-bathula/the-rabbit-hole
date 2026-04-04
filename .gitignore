@@ -3,6 +3,9 @@
 
 # Environment variables — never commit these
 server/.env
+
+# Local-only API cost / latency benchmark (optional; keep out of repo)
+server/scripts/benchmark-deepseek-models.mjs
 # client/.env is intentionally committed — Firebase client config is public by design
 # See: https://firebase.google.com/docs/projects/api-keys
 

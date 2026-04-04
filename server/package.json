@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "start": "node index.js",
-    "dev": "node --watch index.js"
+    "dev": "node --watch index.js",
+    "benchmark:deepseek": "node scripts/benchmark-deepseek-models.mjs"
   },
   "dependencies": {
     "@google-cloud/firestore": "^8.3.0",

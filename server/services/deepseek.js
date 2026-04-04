@@ -7,7 +7,7 @@ const client = new OpenAI({
 });
 
 const DEEP_SEEK_CHAT_MODEL = 'deepseek-chat';
-
+const DEEP_SEEK_REASONER_MODEL = 'deepseek-reasoner';
 const geminiClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const GEMINI_MODEL_FLASH_LITE = 'gemini-2.5-flash-lite';
 const GEMINI_MODEL_FLASH = 'gemini-2.5-flash';
@@ -352,7 +352,7 @@ Be precise and specific. Every word should earn its place.`;
 
   const g = sourceGroundingSuffix(groundingContext);
   const response = await client.chat.completions.create({
-    model: GEMINI_MODEL_FLASH,
+    model: DEEP_SEEK_CHAT_MODEL,
     messages: [
       { role: 'system', content: systemPrompt },
       {
@@ -418,8 +418,10 @@ ${codeField}
 Be precise. Every sentence must earn its place. No filler.`;
 
   const g = sourceGroundingSuffix(groundingContext);
+  // deepseek-reasoner only here (expert deepen); explainNode stays on chat for latency.
+  const useReasoner = mode === 'expert';
   const response = await client.chat.completions.create({
-    model: GEMINI_MODEL_FLASH,
+    model: useReasoner ? DEEP_SEEK_REASONER_MODEL : DEEP_SEEK_CHAT_MODEL,
     messages: [
       { role: 'system', content: systemPrompt },
       {
@@ -428,7 +430,7 @@ Be precise. Every sentence must earn its place. No filler.`;
       },
     ],
     response_format: { type: 'json_object' },
-    temperature: deepenTemp,
+    ...(useReasoner ? {} : { temperature: deepenTemp }),
   });
 
   return JSON.parse(response.choices[0].message.content);

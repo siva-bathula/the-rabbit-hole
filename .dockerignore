@@ -1,5 +1,6 @@
 **/node_modules
 server/public
+server/scripts/benchmark-deepseek-models.mjs
 # Server .env has secrets — never include in Docker build
 server/.env
 # Root-level .env if one exists
