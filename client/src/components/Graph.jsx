@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useCallback, useState, forwardRef, useImperativeHandle } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 
 const NODE_COLORS = {
@@ -32,6 +32,17 @@ function getDisplayLabel(label, isMobile) {
   return words[0] + '…';
 }
 
+/** Shorter on-canvas labels during path replay to reduce overlap on dense graphs. */
+function getReplayDisplayLabel(label) {
+  if (!label || typeof label !== 'string') return '';
+  const max = 22;
+  if (label.length <= max) return label;
+  const slice = label.slice(0, max);
+  const lastSpace = slice.lastIndexOf(' ');
+  const cut = lastSpace > 12 ? lastSpace : max;
+  return `${label.slice(0, cut).trimEnd()}…`;
+}
+
 function getNodeRadius(node) {
   if (node.id === 'root') return 10;
   // Deeper nodes are subtly smaller to convey hierarchy
@@ -39,21 +50,74 @@ function getNodeRadius(node) {
   return Math.max(4, 6 - (depth - 1) * 1.5);
 }
 
-function getNodeColor(node, selectedNode, expandedNodes) {
+const REPLAY_TRAIL = '#FBBF24';
+const REPLAY_CURRENT = '#FDE047';
+
+/** Must match ForceGraph2D minZoom / maxZoom props (ref does not expose minZoom/maxZoom). */
+const GRAPH_MIN_ZOOM = 0.22;
+const GRAPH_MAX_ZOOM_DEFAULT = 6;
+/** Replay max zoom — only user +/- changes level between steps (steps use pan-only centerAt). */
+const GRAPH_MAX_ZOOM_REPLAY = 10;
+
+/**
+ * force-graph resets pan when k === internal lastSetZoom; centerAt does not change k.
+ * Nudge k imperceptibly (or down if at max zoom) so the next onFinishUpdate does not wipe pan.
+ */
+const REPLAY_ZOOM_K_EPS = 1.0001;
+
+function replayNudgeZoomK(fg, maxK) {
+  if (!fg?.zoom) return;
+  const z0 = fg.zoom();
+  if (!isFinite(z0)) return;
+  const zUp = Math.min(maxK, Math.max(GRAPH_MIN_ZOOM, z0 * REPLAY_ZOOM_K_EPS));
+  if (Math.abs(zUp - z0) > 1e-9) {
+    fg.zoom(zUp, 0);
+    return;
+  }
+  const zDn = Math.min(maxK, Math.max(GRAPH_MIN_ZOOM, z0 / REPLAY_ZOOM_K_EPS));
+  if (Math.abs(zDn - z0) > 1e-9) fg.zoom(zDn, 0);
+}
+
+function getNodeColor(node, selectedNode, expandedNodes, replay) {
+  if (replay?.active) {
+    const { pathSet, trailSet, currentId } = replay;
+    if (!pathSet.has(node.id)) {
+      return 'rgba(55,65,81,0.45)';
+    }
+    if (!trailSet.has(node.id)) {
+      return 'rgba(75,85,99,0.42)';
+    }
+    if (node.id === currentId) return REPLAY_CURRENT;
+    return REPLAY_TRAIL;
+  }
   if (selectedNode?.id === node.id) return NODE_COLORS.selected;
   if (node.id === 'root') return NODE_COLORS.root;
   if (expandedNodes.has(node.id)) return NODE_COLORS.expanded;
   return GROUP_COLORS[node.group] || NODE_COLORS.default;
 }
 
-export default function Graph({
-  graphData,
-  selectedNode,
-  expandedNodes,
-  expandingNodeId,
-  onNodeClick,
-}) {
+const Graph = forwardRef(function Graph(
+  {
+    graphData,
+    selectedNode,
+    expandedNodes,
+    expandingNodeId,
+    onNodeClick,
+    /** { pathIds: string[], stepIndex: number } or null — exploration path replay */
+    explorationReplay = null,
+    widthOverride = null,
+    heightOverride = null,
+  },
+  ref,
+) {
   const fgRef = useRef(null);
+  /** react-force-graph-2d ref does not expose graphData(); use React props via ref for lookups. */
+  const graphDataRef = useRef(graphData);
+  graphDataRef.current = graphData;
+
+  const replayActive = Boolean(explorationReplay?.pathIds?.length);
+  const maxZoomLimit = replayActive ? GRAPH_MAX_ZOOM_REPLAY : GRAPH_MAX_ZOOM_DEFAULT;
+
   // Tracks whether root children have already been pinned for the current graph
   const seededRef = useRef(false);
   const [dimensions, setDimensions] = useState({
@@ -61,13 +125,108 @@ export default function Graph({
     height: window.innerHeight,
   });
 
+  const width = widthOverride ?? dimensions.width;
+  const height = heightOverride ?? dimensions.height;
+
+  const replayPanTimersRef = useRef([]);
+  const replayCenterSeqRef = useRef(0);
+  const replayCenterPendingRef = useRef(null);
+
+  const clearReplayPanTimers = useCallback(() => {
+    replayPanTimersRef.current.forEach(clearTimeout);
+    replayPanTimersRef.current = [];
+  }, []);
+
   useEffect(() => {
+    return () => {
+      clearReplayPanTimers();
+    };
+  }, [clearReplayPanTimers]);
+
+  useEffect(() => {
+    if (!replayActive) {
+      clearReplayPanTimers();
+      replayCenterPendingRef.current = null;
+    }
+  }, [replayActive, clearReplayPanTimers]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      zoomToFit: (durationMs, paddingPx) => fgRef.current?.zoomToFit(durationMs, paddingPx),
+      /** Zoom to fit only nodes whose ids are in the list (e.g. path-so-far during replay). */
+      zoomToFitNodeIds: (nodeIds, durationMs = 500, paddingPx = 160) => {
+        const fg = fgRef.current;
+        if (!fg || !nodeIds?.length) return;
+        const set = new Set(nodeIds);
+        fg.zoomToFit(durationMs, paddingPx, (n) => set.has(n.id));
+      },
+      /** Multiply current zoom by factor (clamped — react-force-graph ref has no maxZoom/minZoom). */
+      zoomByFactor: (factor, durationMs = 200) => {
+        const fg = fgRef.current;
+        if (!fg || !factor) return;
+        const z = fg.zoom();
+        const next = Math.min(maxZoomLimit, Math.max(GRAPH_MIN_ZOOM, z * factor));
+        if (Math.abs(next - z) > 1e-6) fg.zoom(next, durationMs);
+      },
+      /** Break force-graph k === lastSetZoom after replay framing (centerAt-only would otherwise get reset). */
+      replayStabilizeCamera: () => {
+        const fg = fgRef.current;
+        if (!fg || !replayActive) return;
+        replayNudgeZoomK(fg, maxZoomLimit);
+      },
+      /**
+       * Frame the node. Pan only (centerAt). Replay step changes do not call zoomToFit — zoom stays at the level
+       * from the opening frame / user +/-; retries help when coords are not ready yet. replayNudgeZoomK avoids
+       * force-graph resetting pan when k === lastSetZoom.
+       */
+      centerOnNodeId: (nodeId, durationMs = 450) => {
+        const fg = fgRef.current;
+        if (!fg || !nodeId) return;
+
+        clearReplayPanTimers();
+
+        const maxK = maxZoomLimit;
+        const runCenterAt = (g) => {
+          const node = graphDataRef.current.nodes.find((n) => n.id === nodeId);
+          if (!node || !isFinite(node.x) || !isFinite(node.y)) return false;
+          g.centerAt(node.x, node.y, durationMs);
+          replayNudgeZoomK(g, maxK);
+          return true;
+        };
+
+        if (!replayActive) {
+          runCenterAt(fg);
+          return;
+        }
+
+        const seq = ++replayCenterSeqRef.current;
+        replayCenterPendingRef.current = { nodeId, durationMs, seq };
+
+        const tryPan = () => {
+          if (replayCenterPendingRef.current?.seq !== seq) return;
+          const g = fgRef.current;
+          if (!g) return;
+          runCenterAt(g);
+        };
+
+        [0, 80, 300, 1000].forEach((delay) => {
+          const tid = window.setTimeout(tryPan, delay);
+          replayPanTimersRef.current.push(tid);
+        });
+      },
+    }),
+    [maxZoomLimit, replayActive, clearReplayPanTimers],
+  );
+
+  useEffect(() => {
+    if (widthOverride != null) return;
     const handleResize = () => {
       setDimensions({ width: window.innerWidth, height: window.innerHeight });
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [widthOverride]);
 
   // Pin root and root children at exact positions whenever graph data changes.
   // All other nodes (expanded subtopics and their children) are already pinned
@@ -117,18 +276,38 @@ export default function Graph({
     }
   }, [graphData.nodes.length]);
 
-  // Center on root node when graph first populates
+  // Center on root node when graph first populates (not during path replay — overlay frames zoom itself)
   const hasNodes = graphData.nodes.length > 0;
+  const replayOpen = Boolean(explorationReplay?.pathIds?.length);
   useEffect(() => {
+    if (widthOverride != null) return;
+    if (replayOpen) return;
     if (hasNodes && fgRef.current) {
       const timer = setTimeout(() => {
         fgRef.current?.zoomToFit(600, 80);
       }, 800);
       return () => clearTimeout(timer);
     }
-  }, [hasNodes]);
+  }, [hasNodes, widthOverride, replayOpen]);
 
-  const isMobile = dimensions.width < 640;
+  const isMobile = width < 640;
+
+  const replayVisual = (() => {
+    if (!explorationReplay?.pathIds?.length) return null;
+    const { pathIds, stepIndex } = explorationReplay;
+    const safeStep = Math.min(Math.max(0, stepIndex), pathIds.length - 1);
+    const pathSet = new Set(pathIds);
+    const currentId = pathIds[safeStep];
+    const trailSet = new Set(pathIds.slice(0, safeStep + 1));
+    return {
+      active: true,
+      pathSet,
+      trailSet,
+      currentId,
+      pathIds,
+      safeStep,
+    };
+  })();
 
   const drawNode = useCallback(
     (node, ctx, globalScale) => {
@@ -136,12 +315,13 @@ export default function Graph({
       if (!isFinite(node.x) || !isFinite(node.y)) return;
 
       const r = getNodeRadius(node);
-      const color = getNodeColor(node, selectedNode, expandedNodes);
-      const isExpanding = node.id === expandingNodeId;
-      const isSelected = selectedNode?.id === node.id;
+      const color = getNodeColor(node, selectedNode, expandedNodes, replayVisual);
+      const isExpanding = !replayVisual && node.id === expandingNodeId;
+      const isSelected = !replayVisual && selectedNode?.id === node.id;
+      const isReplayCurrent = replayVisual?.currentId === node.id;
 
       // Outer glow for expanded or selected nodes
-      if (expandedNodes.has(node.id) || isSelected || node.id === 'root') {
+      if (!replayVisual && (expandedNodes.has(node.id) || isSelected || node.id === 'root')) {
         const glowRadius = r * 2.4;
         const gradient = ctx.createRadialGradient(
           node.x, node.y, r * 0.5,
@@ -154,6 +334,20 @@ export default function Graph({
           : 'rgba(34,211,238,';
         gradient.addColorStop(0, `${glowColor}0.25)`);
         gradient.addColorStop(1, `${glowColor}0)`);
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, glowRadius, 0, 2 * Math.PI);
+        ctx.fillStyle = gradient;
+        ctx.fill();
+      }
+
+      if (isReplayCurrent) {
+        const glowRadius = r * 3.2;
+        const gradient = ctx.createRadialGradient(
+          node.x, node.y, r * 0.4,
+          node.x, node.y, glowRadius
+        );
+        gradient.addColorStop(0, 'rgba(253,224,71,0.55)');
+        gradient.addColorStop(1, 'rgba(253,224,71,0)');
         ctx.beginPath();
         ctx.arc(node.x, node.y, glowRadius, 0, 2 * Math.PI);
         ctx.fillStyle = gradient;
@@ -205,42 +399,133 @@ export default function Graph({
       ctx.fillStyle = isSelected
         ? 'rgba(233,213,255,1)'
         : 'rgba(255,255,255,0.85)';
-      ctx.fillText(getDisplayLabel(node.label, isMobile), node.x, node.y + r + 4 / globalScale);
+      const labelAlpha = replayVisual && !replayVisual.pathSet.has(node.id) ? 0.35 : 1;
+      ctx.save();
+      ctx.globalAlpha = labelAlpha;
+      const labelText = replayVisual
+        ? getReplayDisplayLabel(node.label)
+        : getDisplayLabel(node.label, isMobile);
+      ctx.fillText(labelText, node.x, node.y + r + 4 / globalScale);
+      ctx.restore();
     },
-    [selectedNode, expandedNodes, expandingNodeId, isMobile]
+    [selectedNode, expandedNodes, expandingNodeId, isMobile, replayVisual]
   );
 
-  const paintPointerArea = useCallback((node, color, ctx) => {
+  const nodeById = useCallback(
+    (id) => graphData.nodes.find((n) => n.id === id),
+    [graphData.nodes],
+  );
+
+  const paintReplayConnectors = useCallback(
+    (ctx, globalScale) => {
+      if (!replayVisual?.pathIds?.length || replayVisual.safeStep < 1) return;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(251,191,36,0.92)';
+      ctx.lineWidth = 2.8 / globalScale;
+      ctx.setLineDash([6 / globalScale, 5 / globalScale]);
+      ctx.lineCap = 'round';
+      for (let i = 0; i < replayVisual.safeStep; i++) {
+        const a = nodeById(replayVisual.pathIds[i]);
+        const b = nodeById(replayVisual.pathIds[i + 1]);
+        if (!a || !b || !isFinite(a.x) || !isFinite(b.x)) continue;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    },
+    [replayVisual, nodeById],
+  );
+
+  const paintPointerArea = useCallback((node, color, ctx, globalScale = 1) => {
     if (!isFinite(node.x) || !isFinite(node.y)) return;
-    const r = getNodeRadius(node) + 4;
+    const gs = globalScale || 1;
+    const rHit = getNodeRadius(node) + 4;
     ctx.beginPath();
-    ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
+    ctx.arc(node.x, node.y, rHit, 0, 2 * Math.PI);
     ctx.fillStyle = color;
     ctx.fill();
+
+    if (replayVisual?.pathSet?.has(node.id)) {
+      const full = node.label || '';
+      if (!full) return;
+      const short = getReplayDisplayLabel(full);
+      if (short === full) return;
+      const r = getNodeRadius(node);
+      const fontSize = Math.max(13 / gs, 3);
+      ctx.font = `500 ${fontSize}px Inter, system-ui, sans-serif`;
+      const tw = ctx.measureText(short).width;
+      const lineH = fontSize * 1.28;
+      const pad = 4 / gs;
+      const topY = node.y + r + 4 / gs - pad;
+      const leftX = node.x - tw / 2 - pad;
+      const rw = tw + 2 * pad;
+      const rh = lineH + 2 * pad;
+      ctx.fillStyle = color;
+      if (typeof ctx.roundRect === 'function') {
+        ctx.beginPath();
+        ctx.roundRect(leftX, topY, rw, rh, 3 / gs);
+        ctx.fill();
+      } else {
+        ctx.fillRect(leftX, topY, rw, rh);
+      }
+    }
+  }, [replayVisual]);
+
+  const replayLocked = Boolean(replayVisual);
+
+  const replayNodeLabel = useCallback(
+    (n) => {
+      if (!replayVisual?.pathSet?.has(n.id)) return '';
+      const full = n.label || '';
+      if (!full) return '';
+      const short = getReplayDisplayLabel(full);
+      return short !== full ? full : '';
+    },
+    [replayVisual],
+  );
+
+  const onReplayEngineStop = useCallback(() => {
+    const p = replayCenterPendingRef.current;
+    const g = fgRef.current;
+    if (!p?.nodeId || !g) return;
+    const node = graphDataRef.current.nodes.find((n) => n.id === p.nodeId);
+    if (!node || !isFinite(node.x) || !isFinite(node.y)) return;
+    g.centerAt(node.x, node.y, p.durationMs);
+    replayNudgeZoomK(g, GRAPH_MAX_ZOOM_REPLAY);
   }, []);
 
   return (
     <ForceGraph2D
       ref={fgRef}
       graphData={graphData}
-      width={dimensions.width}
-      height={dimensions.height}
       backgroundColor="#07070f"
       nodeCanvasObject={drawNode}
       nodeCanvasObjectMode={() => 'replace'}
       nodePointerAreaPaint={paintPointerArea}
-      onNodeClick={onNodeClick}
-      linkColor={() => 'rgba(148,163,184,0.55)'}
-      linkWidth={1.8}
-      linkDirectionalParticles={2}
+      nodeLabel={replayVisual ? replayNodeLabel : undefined}
+      onNodeClick={replayLocked ? () => {} : onNodeClick}
+      linkColor={() =>
+        replayLocked ? 'rgba(148,163,184,0.12)' : 'rgba(148,163,184,0.55)'
+      }
+      linkWidth={replayLocked ? 0.8 : 1.8}
+      linkDirectionalParticles={replayLocked ? 0 : 2}
       linkDirectionalParticleWidth={2}
       linkDirectionalParticleColor={() => 'rgba(148,163,184,0.85)'}
+      onRenderFramePost={replayVisual ? paintReplayConnectors : undefined}
+      onEngineStop={replayVisual ? onReplayEngineStop : undefined}
       warmupTicks={0}
       cooldownTicks={0}
-      enableNodeDrag={true}
-      enableZoomInteraction={true}
-      minZoom={0.3}
-      maxZoom={6}
+      enableNodeDrag={!replayLocked}
+      enableZoomInteraction
+      enablePanInteraction
+      minZoom={GRAPH_MIN_ZOOM}
+      maxZoom={replayVisual ? GRAPH_MAX_ZOOM_REPLAY : GRAPH_MAX_ZOOM_DEFAULT}
+      width={width}
+      height={height}
     />
   );
-}
+});
+
+export default Graph;

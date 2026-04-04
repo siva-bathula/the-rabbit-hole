@@ -46,6 +46,7 @@ function TreeNode({ item, currentNodeId, visitedIds, onNodeClick }) {
         </span>
         <span
           className={`truncate text-xs leading-relaxed ${node.followUp ? 'text-fuchsia-200/85' : ''}`}
+          title={node.label}
         >
           {node.followUp ? '↳ ' : ''}
           {node.label}

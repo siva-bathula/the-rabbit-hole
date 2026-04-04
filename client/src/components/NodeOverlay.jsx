@@ -152,12 +152,17 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
               <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
                 <div className="w-10 h-1 rounded-full bg-white/20" />
               </div>
-              <div className="px-6 pt-3 pb-2 border-b border-white/10 flex items-start justify-between flex-shrink-0">
-                <div>
+              <div className="px-6 pt-3 pb-2 border-b border-white/10 flex items-start justify-between flex-shrink-0 gap-3 min-w-0">
+                <div className="min-w-0 flex-1">
                   <span className="text-xs font-medium uppercase tracking-widest text-fuchsia-400/90 mb-1 block">
                     Follow-up
                   </span>
-                  <h2 className="text-xl font-bold text-white leading-snug">{node.followUpQuestion || node.label}</h2>
+                  <h2
+                    className="text-xl font-bold text-white leading-snug line-clamp-2 sm:line-clamp-3"
+                    title={node.followUpQuestion || node.label}
+                  >
+                    {node.followUpQuestion || node.label}
+                  </h2>
                 </div>
                 <button
                   type="button"

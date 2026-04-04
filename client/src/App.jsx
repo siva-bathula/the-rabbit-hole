@@ -3,9 +3,11 @@ import SearchBar, { getRandomN, STATIC_TOPICS } from './components/SearchBar.jsx
 import Graph from './components/Graph.jsx';
 import NodeOverlay from './components/NodeOverlay.jsx';
 import SlowBurnView from './components/SlowBurnView.jsx';
+import PathReplayOverlay from './components/PathReplayOverlay.jsx';
 import SessionsDrawer from './components/SessionsDrawer.jsx';
 import FollowUpChatPanel from './components/FollowUpChatPanel.jsx';
 import { useGraph } from './hooks/useGraph.js';
+import { useExplorationPath } from './hooks/useExplorationPath.js';
 import QuizOverlay from './components/QuizOverlay.jsx';
 import {
   saveLive, loadLive, clearLive,
@@ -15,12 +17,13 @@ import {
   serializeShareSnap, deserializeShareSnap,
 } from './lib/persist.js';
 
-function buildSession(topic, mode, snap, shareId = null) {
+function buildSession(topic, mode, snap, shareId = null, explorationPathIds = []) {
   const previewNodes = snap.graphData.nodes
     .filter((n) => n.id !== 'root')
     .slice(0, 3)
     .map((n) => n.label);
   const now = Date.now();
+  const path = Array.isArray(explorationPathIds) ? explorationPathIds : [];
   return {
     id: crypto.randomUUID(),
     topic,
@@ -31,6 +34,7 @@ function buildSession(topic, mode, snap, shareId = null) {
     nodeCount: snap.graphData.nodes.length,
     previewNodes,
     shareId: shareId || null,
+    explorationPathIds: [...path],
     // full restorable state
     graphData: snap.graphData,
     expandedNodes: snap.expandedNodes,
@@ -40,6 +44,13 @@ function buildSession(topic, mode, snap, shareId = null) {
     expandDataCache: snap.expandDataCache,
     groundingContext: snap.groundingContext || '',
   };
+}
+
+/** Keep stored exploration order; drop ids not present on the graph (stale after edits). */
+function filterPathToGraph(pathIds, nodes) {
+  if (!Array.isArray(pathIds) || !pathIds.length || !nodes?.length) return [];
+  const set = new Set(nodes.map((n) => n.id));
+  return pathIds.filter((id) => id && set.has(id));
 }
 
 function normalizeTopicKey(topic) {
@@ -142,6 +153,42 @@ export default function App() {
     addFollowUpNode,
   } = useGraph();
 
+  const { pathIds, appendStep, resetPath, replacePath, canReplay } = useExplorationPath();
+  const [pathReplayOpen, setPathReplayOpen] = useState(false);
+  const [replayStepIndex, setReplayStepIndex] = useState(0);
+
+  const closePathReplay = useCallback(() => {
+    setPathReplayOpen(false);
+  }, []);
+
+  const resetSessionPath = useCallback(() => {
+    resetPath();
+    setPathReplayOpen(false);
+  }, [resetPath]);
+
+  const openPathReplay = useCallback(() => {
+    if (pathIds.length < 2) return;
+    setReplayStepIndex(0);
+    setPathReplayOpen(true);
+  }, [pathIds.length]);
+
+  useEffect(() => {
+    if (phase !== 'graph' || mode !== 'fast') return;
+    if (selectedNode?.id) appendStep(selectedNode.id);
+  }, [phase, mode, selectedNode?.id, appendStep]);
+
+  useEffect(() => {
+    if (!pathReplayOpen || pathIds.length < 2) return;
+    const maxIdx = pathIds.length - 1;
+    if (replayStepIndex >= maxIdx) return;
+    const n = pathIds.length;
+    const delay = n <= 5 ? 3600 : n <= 12 ? 2800 : 2200;
+    const t = window.setTimeout(() => {
+      setReplayStepIndex((i) => Math.min(i + 1, maxIdx));
+    }, delay);
+    return () => window.clearTimeout(t);
+  }, [pathReplayOpen, pathIds.length, replayStepIndex]);
+
   // ── Persistence effects ────────────────────────────────────────────────────
 
   // #4 — Save mode whenever it changes
@@ -161,12 +208,19 @@ export default function App() {
     if (!restoredRef.current) return;
     const snap = snapshot();
     if (!snap.graphData.nodes.length) return;
-    saveLive({ snap, topic: currentTopic, mode, activeSessionId, shareId });
-  }, [snapshot, currentTopic, mode, activeSessionId, shareId]);
+    saveLive({
+      snap,
+      topic: currentTopic,
+      mode,
+      activeSessionId,
+      shareId,
+      explorationPathIds: pathIds,
+    });
+  }, [snapshot, currentTopic, mode, activeSessionId, shareId, pathIds]);
 
   useEffect(() => {
     if (phase === 'graph' && !isExploring) persistLive();
-  }, [graphData, phase, isExploring, persistLive]);
+  }, [graphData, pathIds, phase, isExploring, persistLive]);
 
   // #1 — Restore live graph on first mount (runs once)
   // If a ?share= param is present, load that graph from the API instead.
@@ -182,6 +236,7 @@ export default function App() {
         .then((data) => {
           if (data.error) return;
           const snap = deserializeShareSnap(data);
+          resetSessionPath();
           restore(snap);
           setCurrentTopic(data.topic || '');
           setPhase('graph');
@@ -194,6 +249,9 @@ export default function App() {
     const saved = loadLive();
     if (saved && saved.snap.graphData.nodes.length > 0) {
       restore(saved.snap);
+      replacePath(
+        filterPathToGraph(saved.explorationPathIds, saved.snap.graphData.nodes),
+      );
       setCurrentTopic(saved.topic);
       setMode(saved.mode);
       setPhase('graph');
@@ -216,6 +274,7 @@ export default function App() {
       modeOverride ?? mode,
       snap,
       shareId,
+      pathIds,
     );
     setSessions((prev) => {
       // Replace existing session for same activeSessionId if switching back
@@ -230,14 +289,14 @@ export default function App() {
       return upsertSessionByTopic(prev, session);
     });
     return session.id;
-  }, [snapshot, currentTopic, mode, activeSessionId, shareId]);
+  }, [snapshot, currentTopic, mode, activeSessionId, shareId, pathIds]);
 
   // Switch to a saved session (saves current first)
   const switchToSession = useCallback((id) => {
     // Save current live graph back to its own session (only if there is one)
     if (graphData.nodes.length > 0 && activeSessionId) {
       const snap = snapshot();
-      const updated = buildSession(currentTopic, mode, snap, shareId);
+      const updated = buildSession(currentTopic, mode, snap, shareId, pathIds);
       setSessions((prev) =>
         prev.map((s) =>
           s.id === activeSessionId
@@ -262,6 +321,9 @@ export default function App() {
         expandDataCache: target.expandDataCache,
         groundingContext: target.groundingContext || '',
       });
+      replacePath(
+        filterPathToGraph(target.explorationPathIds, target.graphData.nodes),
+      );
       setCurrentTopic(target.topic);
       setMode(target.mode);
       setPhase('graph');
@@ -271,7 +333,17 @@ export default function App() {
       // Bump lastUsedAt so the list stays sorted by most-recently-used
       return prev.map((s) => s.id === id ? { ...s, lastUsedAt: Date.now() } : s);
     });
-  }, [snapshot, restore, graphData.nodes.length, currentTopic, mode, activeSessionId, shareId]);
+  }, [
+    snapshot,
+    restore,
+    replacePath,
+    graphData.nodes.length,
+    currentTopic,
+    mode,
+    activeSessionId,
+    shareId,
+    pathIds,
+  ]);
 
   const deleteSession = useCallback((id) => {
     setSessions((prev) => prev.filter((s) => s.id !== id));
@@ -283,6 +355,7 @@ export default function App() {
     setSessions([]);
     clearLive();
     reset();
+    resetSessionPath();
     setPhase('search');
     setStaticPicks(getRandomN(STATIC_TOPICS, 4));
     setCurrentTopic('');
@@ -294,7 +367,7 @@ export default function App() {
     setFollowUpNode(null);
     setQuizTarget(null);
     setSessionsOpen(false);
-  }, [reset, setSelectedNode]);
+  }, [reset, resetSessionPath, setSelectedNode]);
 
   const handleShare = useCallback(async () => {
     if (isSharing) return;
@@ -328,7 +401,7 @@ export default function App() {
   const handleForkHole = useCallback((nodeTopic) => {
     if (graphData.nodes.length > 0) {
       const snap = snapshot();
-      const session = buildSession(currentTopic, mode, snap, shareId);
+      const session = buildSession(currentTopic, mode, snap, shareId, pathIds);
       setSessions((prev) => {
         if (activeSessionId) {
           const exists = prev.some((s) => s.id === activeSessionId);
@@ -344,12 +417,13 @@ export default function App() {
     setSelectedNode(null);
     setPrefillTopic(nodeTopic);
     reset();
+    resetSessionPath();
     setPhase('search');
     setStaticPicks(getRandomN(STATIC_TOPICS, 4));
     setCurrentTopic('');
     setActiveSessionId(null);
     setShareId(null);
-  }, [snapshot, graphData.nodes.length, currentTopic, mode, activeSessionId, shareId, reset, setSelectedNode]);
+  }, [snapshot, graphData.nodes.length, currentTopic, mode, activeSessionId, shareId, pathIds, reset, resetSessionPath, setSelectedNode]);
 
   const openFollowUpPanel = useCallback((node) => {
     setFollowUpNode(node);
@@ -366,10 +440,11 @@ export default function App() {
       setCurrentTopic(trimmed);
       setActiveSessionId(null);
       setShareId(null);
+      resetSessionPath();
       explore(trimmed);
       setPhase('graph');
     },
-    [explore, saveToHistory],
+    [explore, resetSessionPath, saveToHistory],
   );
 
   const handleSearch = useCallback(
@@ -381,11 +456,12 @@ export default function App() {
       saveToHistory(displayLabel);
       setPrefillTopic('');
       setCurrentTopic(query);
+      resetSessionPath();
       await explore(gc ? { topic: query, groundingContext: gc } : query);
       setPhase('graph');
       setActiveSessionId(null);
     },
-    [explore, saveToHistory],
+    [explore, resetSessionPath, saveToHistory],
   );
 
   const handleNodeClick = useCallback(
@@ -415,11 +491,12 @@ export default function App() {
       saveToHistory(topic);
       setSelectedNode(null);
       setCurrentTopic(topic);
+      resetSessionPath();
       await explore(topic);
       setPhase('graph');
       setActiveSessionId(null);
     },
-    [explore, setSelectedNode, saveToHistory],
+    [explore, resetSessionPath, setSelectedNode, saveToHistory],
   );
 
   const handleModeToggle = useCallback(() => {
@@ -430,7 +507,7 @@ export default function App() {
     // Save live graph before going home
     if (graphData.nodes.length > 0) {
       const snap = snapshot();
-      const session = buildSession(currentTopic, mode, snap, shareId);
+      const session = buildSession(currentTopic, mode, snap, shareId, pathIds);
       setSessions((prev) => {
         if (activeSessionId) {
           const exists = prev.some((s) => s.id === activeSessionId);
@@ -445,6 +522,7 @@ export default function App() {
     }
     clearLive(); // user explicitly left — don't auto-restore this graph
     reset();
+    resetSessionPath();
     setPhase('search');
     setStaticPicks(getRandomN(STATIC_TOPICS, 4));
     setCurrentTopic('');
@@ -549,6 +627,7 @@ export default function App() {
                 onExplainModeChange={setExplainMode}
                 onQuizMe={(node, explanation) => setQuizTarget({ node, explanation, rootTopic: rootLabel })}
                 onAskFollowUp={openFollowUpPanel}
+                onExplorationStep={appendStep}
               />
             </div>
           )}
@@ -610,6 +689,26 @@ export default function App() {
                   </svg>
                 )}
                 <span className="hidden sm:inline">{shareCopied ? 'Copied!' : 'Share'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={openPathReplay}
+                disabled={!canReplay || isExploring || graphData.nodes.length === 0}
+                title={canReplay ? 'Animate the nodes you visited in order' : 'Visit at least two nodes to replay'}
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-sm font-medium transition-all border
+                  border-amber-500/35 text-amber-200/90 hover:bg-amber-500/10
+                  disabled:opacity-35 disabled:cursor-not-allowed"
+                style={{ background: 'rgba(251,191,36,0.08)' }}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="hidden sm:inline">Replay my path</span>
+                <span className="sm:hidden">Replay</span>
               </button>
 
               {/* Sessions pill */}
@@ -723,6 +822,19 @@ export default function App() {
           onClose={() => setQuizTarget(null)}
         />
       )}
+
+      <PathReplayOverlay
+        open={pathReplayOpen && phase === 'graph'}
+        graphData={graphData}
+        expandedNodes={expandedNodes}
+        pathIds={pathIds}
+        stepIndex={
+          pathIds.length >= 2
+            ? Math.min(replayStepIndex, pathIds.length - 1)
+            : 0
+        }
+        onClose={closePathReplay}
+      />
     </div>
   );
 }

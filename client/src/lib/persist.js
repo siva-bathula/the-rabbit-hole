@@ -59,12 +59,20 @@ function deserializeSnap(raw) {
 
 // ─── Live graph ───────────────────────────────────────────────────────────────
 
-export function saveLive({ snap, topic, mode, activeSessionId, shareId }) {
+export function saveLive({ snap, topic, mode, activeSessionId, shareId, explorationPathIds }) {
   if (!snap.graphData.nodes.length) return;
   try {
+    const path = Array.isArray(explorationPathIds) ? explorationPathIds : [];
     localStorage.setItem(
       KEYS.LIVE,
-      JSON.stringify({ ...serializeSnap(snap), topic, mode, activeSessionId: activeSessionId ?? null, shareId: shareId ?? null }),
+      JSON.stringify({
+        ...serializeSnap(snap),
+        topic,
+        mode,
+        activeSessionId: activeSessionId ?? null,
+        shareId: shareId ?? null,
+        explorationPathIds: path,
+      }),
     );
   } catch {}
 }
@@ -76,7 +84,14 @@ export function loadLive() {
     const snap = deserializeSnap(raw);
     if (!snap.sessionTopic && raw.topic) snap.sessionTopic = raw.topic;
     if (!snap.groundingContext && raw.groundingContext) snap.groundingContext = raw.groundingContext;
-    return { snap, topic: raw.topic, mode: raw.mode, activeSessionId: raw.activeSessionId ?? null, shareId: raw.shareId ?? null };
+    return {
+      snap,
+      topic: raw.topic,
+      mode: raw.mode,
+      activeSessionId: raw.activeSessionId ?? null,
+      shareId: raw.shareId ?? null,
+      explorationPathIds: Array.isArray(raw.explorationPathIds) ? raw.explorationPathIds : [],
+    };
   } catch {
     return null;
   }

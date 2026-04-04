@@ -305,10 +305,10 @@ export async function explainNode(
 
   const toneInstruction =
     mode === 'eli5'
-      ? `SIMPLE (ELI5) MODE — The reader wants the easiest wording, not a childish voice. Write as a clear adult using everyday vocabulary, short sentences, and minimal jargon (define any necessary term in one plain line). Do not talk down, use baby talk, or pretend to be a kid. Explain ideas directly—no extended "it's like..." metaphors.`
+      ? `Write for a very smart, curious 10-year-old. Use simple everyday words; no jargon unless you define it in one short plain sentence. Short, punchy sentences. Explain ideas directly—no extended "it's like..." stories or forced metaphors.`
       : mode === 'expert'
-      ? `EXPERT MODE — The reader wants deep, descriptive content. Assume strong prior knowledge: use precise technical terminology, skip hand-holding and basic definitions. Be thorough and substantive—longer sentences and richer detail are appropriate. Cover mechanisms, edge cases, performance, trade-offs, and non-obvious nuances a senior practitioner would value. Avoid filler metaphors; state mechanisms plainly.`
-      : `NORMAL MODE — The typical reader: balanced length and quality—not oversimplified, not a specialist treatise. Use clear, natural language (warm Indian English is fine: "basically", "actually", "you see", "only", occasional "isn't it?" or "right?"). Standard depth: a solid overview with real substance. No extended analogies or whimsical comparisons; at most one short factual example if it helps.`;
+      ? `Write for a domain expert who already has strong foundational knowledge. Use precise technical terminology without simplification. Skip basic definitions and introductory context entirely. Focus on mechanisms, edge cases, performance characteristics, design trade-offs, and non-obvious nuances a senior practitioner would find genuinely insightful. Be direct and technically rigorous ? every sentence must add real value. Avoid filler metaphors; state mechanisms plainly.`
+      : `Write in the voice of a warm, knowledgeable educator using natural Indian English: phrases like "basically", "actually", "you see", "only" for emphasis, and occasionally "isn't it?" or "right?". Be direct and conversational: put the idea in plain words first. Do not use extended analogies, whimsical comparisons, or stock "everyday life" metaphors (markets, vendors, traffic, etc.). If one concrete example truly helps, use at most one short factual line—not a story.`;
 
   const explainTemp =
     mode === 'eli5' ? 0.68 : mode === 'expert' ? 0.72 : 0.42;
@@ -329,7 +329,7 @@ Return ONLY a JSON object with exactly these fields:
 ${learnMoreField}
 ${codeField}
 
-Be specific and concrete. Match the chosen mode: Simple = easiest words; Normal = balanced; Expert = deep and descriptive.`
+Be specific and concrete. Write like a brilliant friend giving a first orientation to the topic.`
     : SAFETY_GUARDRAIL_BRIEF + `You are a clear, engaging educator. The user is exploring "${nodeLabel}" as a subtopic within "${parentContext}".
 ${systemExtra}
 
@@ -350,7 +350,7 @@ Return ONLY a JSON object with exactly these fields:
 ${learnMoreField}
 ${codeField}
 
-Be precise and specific. Every word should earn its place. Match Simple / Normal / Expert as above.`;
+Be precise and specific. Every word should earn its place.`;
 
   const g = sourceGroundingSuffix(groundingContext);
   const response = await client.chat.completions.create({
@@ -385,10 +385,10 @@ export async function deepenNode(
 
   const toneInstruction =
     mode === 'eli5'
-      ? `SIMPLE (ELI5) DEEPEN — Same as explain: easiest vocabulary for an adult reader, not a child persona. Surface the hidden "why" and non-obvious points using short plain sentences. No unexplained jargon. No extended metaphors.`
+      ? `Still writing for a curious 10-year-old: the hidden "why" and surprising facts, but only in simple words. No jargon. No extended "it's like..." metaphors or stories.`
       : mode === 'expert'
-      ? `EXPERT DEEPEN — Maximum depth and description for specialists. Dense, substantive insights; technical precision; implementation detail, failure modes, and trade-offs. Each insight can be longer and more detailed than in Normal mode. No filler metaphors.`
-      : `NORMAL DEEPEN — Go meaningfully deeper than the summary with balanced length: substantive for a typical reader, not a thesis. Clear conversational tone; avoid extended analogies.`;
+      ? `Write for a deep domain expert. Advanced implementation details, subtle failure modes, performance nuances, and expert-level gotchas only. Technical precision above all ? no hand-holding. Avoid filler metaphors.`
+      : `Write in the voice of a warm, knowledgeable educator: direct, confident, conversational Indian English ("basically", "actually", "you see", "only", occasional "isn't it?" or "right?"). Go deeper in plain language; do not lean on extended analogies or whimsical comparisons.`;
 
   const deepenTemp =
     mode === 'eli5' ? 0.72 : mode === 'expert' ? 0.78 : 0.5;
@@ -412,7 +412,7 @@ Your job is to go significantly deeper. Focus on:
 3. Advanced patterns, trade-offs, or design decisions
 
 Return ONLY a JSON object with exactly these fields:
-- "advancedInsights": array of 3-5 strings, each a meaty advanced insight (NOT obvious facts). Simple mode: shorter plain strings. Normal mode: balanced length. Expert mode: longer, denser, highly descriptive strings. Write plainly without metaphor padding.
+- "advancedInsights": array of 3-5 strings, each a meaty advanced insight (NOT obvious facts) ? these should feel like tips from a senior engineer or professor; write plainly without metaphor padding
 ${codeField}
 
 Be precise. Every sentence must earn its place. No filler.`;

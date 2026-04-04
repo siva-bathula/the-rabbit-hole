@@ -429,7 +429,12 @@ function FollowUpSlowBurnContent({ node, onContinueThread }) {
       <span className="text-xs font-semibold uppercase tracking-widest text-fuchsia-400/90 mb-2 block">
         Follow-up
       </span>
-      <h1 className="text-2xl font-bold text-white leading-tight mb-6">{node.followUpQuestion || node.label}</h1>
+      <h1
+        className="text-2xl font-bold text-white leading-tight mb-6 line-clamp-2 sm:line-clamp-3 min-w-0"
+        title={node.followUpQuestion || node.label}
+      >
+        {node.followUpQuestion || node.label}
+      </h1>
       <p className="text-white/35 text-xs leading-relaxed border-l-2 border-white/10 pl-3 mb-4" role="note">
         AI-generated follow-up answer. May be incomplete or imprecise.
       </p>
@@ -466,6 +471,7 @@ export default function SlowBurnView({
   onQuizMe,
   explainMode,
   onExplainModeChange,
+  onExplorationStep,
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 640);
 
@@ -488,6 +494,10 @@ export default function SlowBurnView({
     canEnterChildren,
     isExpanding,
   } = useSlowBurn({ graphData, expandedNodes, expand, expandingNodeId });
+
+  useEffect(() => {
+    if (currentNode?.id && onExplorationStep) onExplorationStep(currentNode.id);
+  }, [currentNode?.id, onExplorationStep]);
 
   // Use the immediate parent's label as context — better than always using root
   const parentContext = parentNode?.label || rootLabel;

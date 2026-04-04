@@ -129,7 +129,7 @@ export default function FollowUpChatPanel({
           >
             <div className="min-w-0 pr-2">
               <h2 className="text-white font-bold text-base">Follow-up thread</h2>
-              <p className="text-white/45 text-xs mt-1 truncate">
+              <p className="text-white/45 text-xs mt-1 truncate" title={anchorLabel ? `Branch: ${anchorLabel}` : undefined}>
                 Branch: <span className="text-purple-300/90">{anchorLabel}</span>
               </p>
             </div>
@@ -184,7 +184,16 @@ export default function FollowUpChatPanel({
                 <span className="text-[10px] uppercase tracking-wider text-white/35 block mb-1">
                   {m.role === 'user' ? 'You' : 'Answer'}
                 </span>
-                <div className="whitespace-pre-wrap">{m.content}</div>
+                <div
+                  className={
+                    m.role === 'user'
+                      ? 'whitespace-pre-wrap line-clamp-6 sm:line-clamp-8'
+                      : 'whitespace-pre-wrap line-clamp-8 sm:line-clamp-12'
+                  }
+                  title={m.content}
+                >
+                  {m.content}
+                </div>
               </div>
             ))}
             {error && (
