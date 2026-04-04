@@ -6,10 +6,10 @@ const client = new OpenAI({
   baseURL: 'https://api.deepseek.com',
 });
 
-const MODEL = 'deepseek-chat';
+const DEEP_SEEK_CHAT_MODEL = 'deepseek-chat';
 
 const geminiClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const GEMINI_MODEL = 'gemini-2.5-flash-lite';
+const GEMINI_MODEL_FLASH_LITE = 'gemini-2.5-flash-lite';
 const GEMINI_MODEL_FLASH = 'gemini-2.5-flash';
 const GEMINI_MODEL_PRO = 'gemini-2.5-pro';
 
@@ -352,7 +352,7 @@ Be precise and specific. Every word should earn its place.`;
 
   const g = sourceGroundingSuffix(groundingContext);
   const response = await client.chat.completions.create({
-    model: MODEL,
+    model: GEMINI_MODEL_FLASH,
     messages: [
       { role: 'system', content: systemPrompt },
       {
@@ -419,7 +419,7 @@ Be precise. Every sentence must earn its place. No filler.`;
 
   const g = sourceGroundingSuffix(groundingContext);
   const response = await client.chat.completions.create({
-    model: MODEL,
+    model: GEMINI_MODEL_FLASH,
     messages: [
       { role: 'system', content: systemPrompt },
       {
