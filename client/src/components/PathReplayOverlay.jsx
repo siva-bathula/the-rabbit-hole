@@ -166,7 +166,7 @@ export default function PathReplayOverlay({
   return (
     <div
       className="fixed inset-0 z-[85] flex flex-col"
-      style={{ background: 'rgba(4,4,12,0.92)' }}
+      style={{ background: 'rgb(4,4,12)' }}
       role="dialog"
       aria-modal="true"
       aria-label="Exploration path replay"
@@ -225,7 +225,7 @@ export default function PathReplayOverlay({
         className="relative z-20 flex-shrink-0 px-4 pt-3 pb-4 sm:pt-4 sm:pb-5 flex flex-col gap-3"
         style={{
           borderTop: '1px solid rgba(255,255,255,0.08)',
-          background: 'linear-gradient(180deg, transparent, rgba(15,12,35,0.98))',
+          background: '#0f0f1e',
         }}
       >
         <div className="flex items-center justify-between gap-2 text-xs text-amber-200/70 uppercase tracking-widest">
@@ -240,7 +240,7 @@ export default function PathReplayOverlay({
         <div
           className="rounded-xl px-4 py-3 text-left w-full max-w-3xl mx-auto"
           style={{
-            background: 'rgba(255,255,255,0.04)',
+            background: 'rgba(255,255,255,0.08)',
             border: '1px solid rgba(255,255,255,0.1)',
           }}
         >

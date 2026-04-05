@@ -89,6 +89,31 @@ function replayNudgeZoomK(fg, maxK) {
   if (Math.abs(zDn - z0) > 1e-9) fg.zoom(zDn, 0);
 }
 
+/** Match PathReplayOverlay pathPaddingInitial — larger padding = more zoomed out */
+function pathPaddingInitial(len) {
+  return Math.min(152, 58 + len * 7);
+}
+
+const MOBILE_OPEN_ZOOM_NUDGE = 1.14;
+const MOBILE_FOCUS_MAX_NEIGHBORS = 3;
+
+/** Root + up to 3 direct neighbors for initial mobile frame (replay-like). */
+function getInitialMobileFocusNodeIds(graphData) {
+  const { nodes, links } = graphData;
+  if (!nodes?.length) return [];
+  const hasRoot = nodes.some((n) => n.id === 'root');
+  if (!hasRoot) return nodes.slice(0, 4).map((n) => n.id);
+  const neighbors = [];
+  for (const l of links || []) {
+    const s = typeof l.source === 'object' ? l.source.id : l.source;
+    const t = typeof l.target === 'object' ? l.target.id : l.target;
+    if (s === 'root' && t !== 'root') neighbors.push(t);
+    if (t === 'root' && s !== 'root') neighbors.push(s);
+  }
+  const unique = [...new Set(neighbors)].slice(0, MOBILE_FOCUS_MAX_NEIGHBORS);
+  return ['root', ...unique];
+}
+
 function getNodeColor(node, selectedNode, expandedNodes, replay) {
   if (replay?.active) {
     const { pathSet, trailSet, currentId } = replay;
@@ -274,7 +299,11 @@ const Graph = forwardRef(function Graph(
 
       const rootChildren = graphData.nodes.filter((n) => rootChildIds.has(n.id));
       const nKids = rootChildren.length;
-      const RING_R = Math.min(320, Math.max(190, 150 + nKids * 14));
+      let RING_R = Math.min(320, Math.max(190, 150 + nKids * 14));
+      if (width < 640) {
+        const scale = Math.min(1.35, Math.max(1, 420 / Math.max(width, 280)));
+        RING_R = Math.min(360, RING_R * scale);
+      }
       rootChildren.forEach((node, i) => {
         const angle = (i / rootChildren.length) * 2 * Math.PI - Math.PI / 2;
         const px = RING_R * Math.cos(angle);
@@ -289,7 +318,7 @@ const Graph = forwardRef(function Graph(
 
       seededRef.current = true;
     }
-  }, [graphData.nodes.length]);
+  }, [graphData.nodes.length, width]);
 
   // Center on root node when graph first populates (not during path replay — overlay frames zoom itself)
   const hasNodes = graphData.nodes.length > 0;
@@ -297,15 +326,55 @@ const Graph = forwardRef(function Graph(
   useEffect(() => {
     if (widthOverride != null) return;
     if (replayOpen) return;
-    if (hasNodes && fgRef.current) {
-      const n = graphData.nodes.length;
+    if (!hasNodes || !fgRef.current) return;
+
+    const n = graphData.nodes.length;
+    const narrow = width < 640;
+    const fg = fgRef.current;
+    const timers = [];
+
+    if (narrow) {
+      const focusIds = getInitialMobileFocusNodeIds(graphData);
+      const idSet = new Set(focusIds);
+      const pad = pathPaddingInitial(focusIds.length);
+      timers.push(
+        window.setTimeout(() => {
+          const g = fgRef.current;
+          if (!g?.zoomToFit || focusIds.length === 0) return;
+          g.zoomToFit(450, pad, (node) => idSet.has(node.id));
+        }, 400),
+      );
+      timers.push(
+        window.setTimeout(() => {
+          const g = fgRef.current;
+          if (!g?.zoom) return;
+          const z0 = g.zoom();
+          const next = Math.min(
+            GRAPH_MAX_ZOOM_DEFAULT,
+            Math.max(GRAPH_MIN_ZOOM, z0 * MOBILE_OPEN_ZOOM_NUDGE),
+          );
+          if (Math.abs(next - z0) > 1e-6) g.zoom(next, 220);
+        }, 920),
+      );
+      timers.push(
+        window.setTimeout(() => {
+          const g = fgRef.current;
+          if (g) replayNudgeZoomK(g, GRAPH_MAX_ZOOM_DEFAULT);
+        }, 1220),
+      );
+    } else {
       const padding = Math.min(168, 52 + n * 5);
-      const timer = setTimeout(() => {
-        fgRef.current?.zoomToFit(600, padding);
-      }, 800);
-      return () => clearTimeout(timer);
+      timers.push(
+        window.setTimeout(() => {
+          fgRef.current?.zoomToFit(600, padding);
+        }, 800),
+      );
     }
-  }, [hasNodes, widthOverride, replayOpen, graphData.nodes.length]);
+
+    return () => {
+      timers.forEach(clearTimeout);
+    };
+  }, [hasNodes, widthOverride, replayOpen, graphData.nodes.length, width, height]);
 
   const isMobile = width < 640;
 

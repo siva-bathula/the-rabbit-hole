@@ -589,7 +589,13 @@ export default function App() {
 
   const handleGraphFitView = useCallback(() => {
     const n = graphData.nodes.length;
-    const padding = Math.min(168, 52 + n * 5);
+    const w = typeof window !== 'undefined' ? window.innerWidth : 800;
+    const h = typeof window !== 'undefined' ? window.innerHeight : 600;
+    const narrow = w < 640;
+    const shortEdge = Math.min(w, h);
+    const padding = narrow
+      ? Math.min(shortEdge * 0.2, Math.max(24, 32 + n * 4))
+      : Math.min(168, 52 + n * 5);
     graphViewRef.current?.zoomToFit?.(500, padding);
   }, [graphData.nodes.length]);
 
@@ -657,7 +663,11 @@ export default function App() {
                 readNodeIds={explorationReadIds}
               />
 
-              <div className="absolute top-[4.5rem] sm:top-16 left-3 sm:left-4 z-30 flex flex-col gap-1.5 pointer-events-auto">
+              <div
+                className="absolute z-30 flex flex-col gap-1.5 pointer-events-auto
+                  max-sm:top-auto max-sm:left-3 max-sm:bottom-[max(1.25rem,env(safe-area-inset-bottom,0px))]
+                  sm:top-16 sm:left-4 sm:bottom-auto"
+              >
                 <button
                   type="button"
                   onClick={handleGraphZoomIn}
