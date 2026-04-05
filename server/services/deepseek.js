@@ -301,7 +301,7 @@ export async function explainNode(
     ? `- "code": a working, well-commented code example string demonstrating "${nodeLabel}" (use the language implied by the context, default to JavaScript). Include only the code ??? no markdown fences.`
     : '';
 
-  const learnMoreField = `- "learnMore": an object with "title" (string) and "url" (string) pointing to ONE reputable external resource ??? for example MDN Web Docs for web APIs, official documentation for frameworks/languages, Investopedia for finance terms, Khan Academy for educational topics, or a well-known authoritative site. Only include a URL you are highly confident is real and accurate. Do NOT invent URLs.`;
+  const learnMoreField = `- "learnMore" (optional): an object with "title" (string) and "url" (string, must be https) pointing to ONE specific reputable page ??? for example MDN Web Docs for web APIs, official documentation for frameworks/languages, Investopedia for finance terms, Khan Academy for educational topics, or another authoritative site you know is real. Omit this entire key if you are not certain the URL is correct and currently live. Do NOT invent or approximate URLs.`;
 
   const toneInstruction =
     mode === 'eli5'
@@ -320,7 +320,7 @@ ${systemExtra}
 ${toneInstruction}
 ${EXPLAIN_CLARITY_RULES}
 
-Return ONLY a JSON object with exactly these fields:
+Return ONLY a valid JSON object with these fields (include every required key; omit optional learnMore if you cannot provide a verified https URL):
 - "title": the concept name (string)
 - "summary": 2-3 sentence overview of what this topic is and why it matters (string)
 - "details": array of 3-4 key insight strings that give a high-level map of the territory ? what are the most important things to understand about this topic? (array of strings)
@@ -341,7 +341,7 @@ CRITICAL RULES:
 2. Focus ENTIRELY on what is specific and unique to "${nodeLabel}" within the context of "${parentContext}".
 3. Every sentence must be directly about "${nodeLabel}". No generic filler.
 
-Return ONLY a JSON object with exactly these fields:
+Return ONLY a valid JSON object with these fields (include every required key; omit optional learnMore if you cannot provide a verified https URL):
 - "title": the concept name (string)
 - "summary": 2-3 sentences explaining what "${nodeLabel}" specifically means or does in the context of "${parentContext}" (string)
 - "details": array of 3-4 key insight strings, each revealing something non-obvious or particularly important about "${nodeLabel}" as it applies to "${parentContext}" (array of strings)
