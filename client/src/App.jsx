@@ -189,17 +189,7 @@ export default function App() {
     if (selectedNode?.id) appendStep(selectedNode.id);
   }, [phase, mode, selectedNode?.id, appendStep]);
 
-  useEffect(() => {
-    if (!pathReplayOpen || pathIds.length < 2) return;
-    const maxIdx = pathIds.length - 1;
-    if (replayStepIndex >= maxIdx) return;
-    const n = pathIds.length;
-    const delay = n <= 5 ? 3600 : n <= 12 ? 2800 : 2200;
-    const t = window.setTimeout(() => {
-      setReplayStepIndex((i) => Math.min(i + 1, maxIdx));
-    }, delay);
-    return () => window.clearTimeout(t);
-  }, [pathReplayOpen, pathIds.length, replayStepIndex]);
+  // Path replay: manual steps only (Previous / Next / arrow keys) — no autoplay.
 
   // ── Persistence effects ────────────────────────────────────────────────────
 
@@ -875,6 +865,9 @@ export default function App() {
             : 0
         }
         onClose={closePathReplay}
+        explanationCache={explanationCache}
+        explainMode={explainMode}
+        onStepIndexChange={setReplayStepIndex}
       />
     </div>
   );

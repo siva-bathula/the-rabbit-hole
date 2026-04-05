@@ -1,5 +1,45 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Graph from './Graph.jsx';
+import {
+  excerptFromExplanation,
+  getCachedExplanationEntry,
+} from '../lib/replayRecall.js';
+
+const FOLLOWUP_EXCERPT_MAX = 320;
+
+function recallForNode(node, explanationCache, explainMode) {
+  if (!node) {
+    return {
+      title: '',
+      excerpt: '',
+      hint: '',
+    };
+  }
+  if (node.followUp) {
+    const q = (node.followUpQuestion || node.label || '').trim();
+    const a = (node.followUpAnswer || '').trim();
+    const excerpt = a
+      ? excerptFromExplanation({ summary: a.slice(0, FOLLOWUP_EXCERPT_MAX * 2) })
+      : '';
+    return {
+      title: q || 'Follow-up',
+      excerpt: excerpt || 'Open this thread on the main graph to see the full reply.',
+      hint: 'Follow-up thread',
+    };
+  }
+
+  const entry = getCachedExplanationEntry(explanationCache, node.id, explainMode);
+  const excerpt = excerptFromExplanation(entry);
+  return {
+    title: node.label || '',
+    excerpt,
+    hint: excerpt
+      ? explainMode === 'normal'
+        ? 'From your saved explanation'
+        : `From your saved explanation (${explainMode})`
+      : '',
+  };
+}
 
 const ZOOM_IN = 1.32;
 const ZOOM_OUT = 1 / ZOOM_IN;
@@ -30,6 +70,11 @@ export default function PathReplayOverlay({
   pathIds,
   stepIndex,
   onClose,
+  /** Ref to Map of cache keys → { explanation, deeper } — same as NodeOverlay */
+  explanationCache,
+  /** Which explain depth to prefer when reading cache (eli5 | normal | expert) */
+  explainMode = 'normal',
+  onStepIndexChange,
 }) {
   const graphRef = useRef(null);
   const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight });
@@ -82,10 +127,33 @@ export default function PathReplayOverlay({
     if (!open) return;
     const onKey = (e) => {
       if (e.key === 'Escape') onClose();
+      if (!onStepIndexChange || !pathIds?.length) return;
+      const maxIdx = pathIds.length - 1;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        onStepIndexChange(Math.min(stepIndex + 1, maxIdx));
+      }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        onStepIndexChange(Math.max(stepIndex - 1, 0));
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+  }, [open, onClose, onStepIndexChange, pathIds?.length, stepIndex]);
+
+  const safeStep = pathIds?.length
+    ? Math.min(Math.max(0, stepIndex), pathIds.length - 1)
+    : 0;
+  const currentNodeId = pathIds?.[safeStep];
+  const currentNode = useMemo(
+    () => graphData?.nodes?.find((n) => n.id === currentNodeId) ?? null,
+    [graphData?.nodes, currentNodeId],
+  );
+  const recall = useMemo(
+    () => recallForNode(currentNode, explanationCache, explainMode),
+    [currentNode, explanationCache, explainMode],
+  );
 
   const handleZoomIn = () => graphRef.current?.zoomByFactor?.(ZOOM_IN, 160);
   const handleZoomOut = () => graphRef.current?.zoomByFactor?.(ZOOM_OUT, 160);
@@ -93,7 +161,7 @@ export default function PathReplayOverlay({
   if (!open) return null;
 
   const explorationReplay =
-    pathIds?.length >= 2 ? { pathIds, stepIndex } : null;
+    pathIds?.length >= 2 ? { pathIds, stepIndex: safeStep } : null;
 
   return (
     <div
@@ -148,32 +216,84 @@ export default function PathReplayOverlay({
             onNodeClick={() => {}}
             explorationReplay={explorationReplay}
             widthOverride={size.w}
-            heightOverride={Math.max(200, size.h - 140)}
+            heightOverride={Math.max(200, size.h - 260)}
           />
         </div>
       </div>
 
       <div
-        className="relative z-20 flex-shrink-0 px-4 py-4 sm:py-5 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-6"
+        className="relative z-20 flex-shrink-0 px-4 pt-3 pb-4 sm:pt-4 sm:pb-5 flex flex-col gap-3"
         style={{
           borderTop: '1px solid rgba(255,255,255,0.08)',
           background: 'linear-gradient(180deg, transparent, rgba(15,12,35,0.98))',
         }}
       >
-        <p className="text-center text-white/75 text-sm sm:text-base max-w-md leading-relaxed">
-          This was how you explored this topic — step by step through your curiosity.
-        </p>
-        <button
-          type="button"
-          onClick={onClose}
-          className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors"
+        <div className="flex items-center justify-between gap-2 text-xs text-amber-200/70 uppercase tracking-widest">
+          <span>Replay with recall</span>
+          {pathIds?.length >= 2 && (
+            <span className="text-white/45 normal-case tracking-normal">
+              Step {safeStep + 1} of {pathIds.length}
+            </span>
+          )}
+        </div>
+
+        <div
+          className="rounded-xl px-4 py-3 text-left w-full max-w-3xl mx-auto"
           style={{
-            background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
-            border: '1px solid rgba(196,148,255,0.45)',
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.1)',
           }}
         >
-          Done
-        </button>
+          <h3 className="text-white font-semibold text-sm sm:text-base leading-snug mb-2 line-clamp-2">
+            {recall.title || '—'}
+          </h3>
+          {recall.hint && (
+            <p className="text-green-400/80 text-xs mb-1.5">{recall.hint}</p>
+          )}
+          <p className="text-white/70 text-sm sm:text-[15px] leading-relaxed whitespace-pre-wrap">
+            {recall.excerpt ||
+              'No saved explanation for this stop yet. After you close replay, open this node on the graph to load it — it will appear here next time.'}
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2 sm:gap-3">
+          {onStepIndexChange && pathIds?.length >= 2 && (
+            <div className="flex items-center justify-center gap-2 order-2 sm:order-1">
+              <button
+                type="button"
+                disabled={safeStep <= 0}
+                onClick={() => onStepIndexChange(safeStep - 1)}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-white/85 border border-white/15
+                  bg-white/5 hover:bg-white/10 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                disabled={safeStep >= pathIds.length - 1}
+                onClick={() => onStepIndexChange(safeStep + 1)}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-white/85 border border-white/15
+                  bg-white/5 hover:bg-white/10 disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+              >
+                Next
+              </button>
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="order-1 sm:order-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors"
+            style={{
+              background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
+              border: '1px solid rgba(196,148,255,0.45)',
+            }}
+          >
+            Done
+          </button>
+        </div>
+        <p className="text-center text-white/35 text-[11px] sm:text-xs">
+          Advance with Previous / Next or arrow keys. Zoom controls are on the left (desktop).
+        </p>
       </div>
 
       <button
