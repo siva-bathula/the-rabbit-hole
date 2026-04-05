@@ -5,8 +5,10 @@
  *  1. Map/Set are not JSON-serialisable → convert to arrays of entries / values
  *  2. D3 mutates link.source / link.target from string IDs to node objects
  *     (creating circular refs that break JSON.stringify) → normalise before saving
- *  3. localStorage can be full → every write is wrapped in try/catch
+ *  3. localStorage can be full → try/catch with QuotaExceeded retry (slim payload)
  */
+
+export const MAX_SAVED_SESSIONS = 25;
 
 const KEYS = {
   LIVE: 'rabbit-hole-live',
@@ -14,6 +16,39 @@ const KEYS = {
   MODE: 'rabbit-hole-mode',
   EXPLAIN_MODE: 'rabbit-hole-explain-mode',
 };
+
+function sessionRecency(s) {
+  return s.lastUsedAt ?? s.createdAt ?? 0;
+}
+
+/**
+ * Newest-first, at most `max` sessions. If `activeSessionId` is set and would be
+ * evicted, keep it and drop one more of the others.
+ */
+export function capSessionsByRecency(sessions, max, activeSessionId = null) {
+  if (!Array.isArray(sessions) || sessions.length <= max) return sessions;
+  const sorted = [...sessions].sort((a, b) => sessionRecency(b) - sessionRecency(a));
+  let kept = sorted.slice(0, max);
+  if (activeSessionId) {
+    const hasActive = kept.some((s) => s.id === activeSessionId);
+    if (!hasActive) {
+      const active = sessions.find((s) => s.id === activeSessionId);
+      if (active) {
+        kept = [
+          active,
+          ...sorted.filter((s) => s.id !== activeSessionId).slice(0, max - 1),
+        ];
+      }
+    }
+  }
+  return kept;
+}
+
+export function isStorageQuotaError(e) {
+  if (!e) return false;
+  if (e.name === 'QuotaExceededError') return true;
+  return e instanceof DOMException && e.code === 22;
+}
 
 // ─── Link normalisation ───────────────────────────────────────────────────────
 
@@ -43,6 +78,14 @@ function serializeSnap(snap) {
   };
 }
 
+function serializeSnapSlim(snap) {
+  return {
+    ...serializeSnap(snap),
+    explanationCache: [],
+    expandDataCache: [],
+  };
+}
+
 function deserializeSnap(raw) {
   return {
     graphData: raw.graphData,
@@ -60,21 +103,41 @@ function deserializeSnap(raw) {
 // ─── Live graph ───────────────────────────────────────────────────────────────
 
 export function saveLive({ snap, topic, mode, activeSessionId, shareId, explorationPathIds }) {
-  if (!snap.graphData.nodes.length) return;
+  if (!snap.graphData.nodes.length) return { ok: true };
+  const path = Array.isArray(explorationPathIds) ? explorationPathIds : [];
+  const payloadFull = {
+    ...serializeSnap(snap),
+    topic,
+    mode,
+    activeSessionId: activeSessionId ?? null,
+    shareId: shareId ?? null,
+    explorationPathIds: path,
+  };
+  const payloadSlim = {
+    ...serializeSnapSlim(snap),
+    topic,
+    mode,
+    activeSessionId: activeSessionId ?? null,
+    shareId: shareId ?? null,
+    explorationPathIds: path,
+  };
   try {
-    const path = Array.isArray(explorationPathIds) ? explorationPathIds : [];
-    localStorage.setItem(
-      KEYS.LIVE,
-      JSON.stringify({
-        ...serializeSnap(snap),
-        topic,
-        mode,
-        activeSessionId: activeSessionId ?? null,
-        shareId: shareId ?? null,
-        explorationPathIds: path,
-      }),
-    );
-  } catch {}
+    localStorage.setItem(KEYS.LIVE, JSON.stringify(payloadFull));
+    return { ok: true };
+  } catch (e) {
+    if (!isStorageQuotaError(e)) {
+      console.warn('[persist] saveLive failed', e);
+      return { ok: false };
+    }
+    try {
+      localStorage.setItem(KEYS.LIVE, JSON.stringify(payloadSlim));
+      console.warn('[persist] saveLive: storage quota — saved without explanation caches');
+      return { ok: true, strippedCaches: true };
+    } catch (e2) {
+      console.warn('[persist] saveLive: quota retry failed', e2);
+      return { ok: false, quotaExceeded: true };
+    }
+  }
 }
 
 export function loadLive() {
@@ -118,6 +181,15 @@ function serializeSession(s) {
   };
 }
 
+function serializeSessionSlim(s) {
+  const base = serializeSession(s);
+  return {
+    ...base,
+    explanationCache: [],
+    expandDataCache: [],
+  };
+}
+
 function deserializeSession(raw) {
   return {
     ...raw,
@@ -129,13 +201,29 @@ function deserializeSession(raw) {
   };
 }
 
+/**
+ * @returns {{ ok: true, strippedCaches?: boolean } | { ok: false, quotaExceeded?: boolean }}
+ */
 export function saveSessions(sessions) {
+  const full = JSON.stringify(sessions.map(serializeSession));
   try {
-    localStorage.setItem(
-      KEYS.SESSIONS,
-      JSON.stringify(sessions.map(serializeSession)),
-    );
-  } catch {}
+    localStorage.setItem(KEYS.SESSIONS, full);
+    return { ok: true };
+  } catch (e) {
+    if (!isStorageQuotaError(e)) {
+      console.warn('[persist] saveSessions failed', e);
+      return { ok: false };
+    }
+    try {
+      const slim = JSON.stringify(sessions.map(serializeSessionSlim));
+      localStorage.setItem(KEYS.SESSIONS, slim);
+      console.warn('[persist] saveSessions: storage quota — saved without explanation caches');
+      return { ok: true, strippedCaches: true };
+    } catch (e2) {
+      console.warn('[persist] saveSessions: quota retry failed', e2);
+      return { ok: false, quotaExceeded: true };
+    }
+  }
 }
 
 export function loadSessions() {
@@ -213,7 +301,10 @@ export function deserializeShareSnap(raw) {
 export function saveMode(mode) {
   try {
     localStorage.setItem(KEYS.MODE, mode);
-  } catch {}
+  } catch (e) {
+    if (isStorageQuotaError(e)) console.warn('[persist] saveMode: storage quota');
+    else console.warn('[persist] saveMode failed', e);
+  }
 }
 
 export function loadMode() {
@@ -225,7 +316,10 @@ export function loadMode() {
 export function saveExplainMode(mode) {
   try {
     localStorage.setItem(KEYS.EXPLAIN_MODE, mode);
-  } catch {}
+  } catch (e) {
+    if (isStorageQuotaError(e)) console.warn('[persist] saveExplainMode: storage quota');
+    else console.warn('[persist] saveExplainMode failed', e);
+  }
 }
 
 export function loadExplainMode() {

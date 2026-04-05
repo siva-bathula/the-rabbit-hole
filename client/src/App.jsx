@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo, useLayoutEffect } from 'react';
 import SearchBar, { getRandomN, STATIC_TOPICS } from './components/SearchBar.jsx';
 import Graph from './components/Graph.jsx';
 import NodeOverlay from './components/NodeOverlay.jsx';
@@ -15,6 +15,9 @@ import {
   saveMode, loadMode,
   saveExplainMode, loadExplainMode,
   serializeShareSnap, deserializeShareSnap,
+  capSessionsByRecency,
+  MAX_SAVED_SESSIONS,
+  isStorageQuotaError,
 } from './lib/persist.js';
 import { isNewsAnchoredSessionTopic } from './lib/newsTopic.js';
 
@@ -101,10 +104,23 @@ export default function App() {
     }
   });
 
-  // Sessions — initialised from localStorage (#2), deduped by topic to fix legacy duplicates
-  const [sessions, setSessions] = useState(() => dedupeSessionsByTopic(loadSessions()));
+  // Sessions — initialised from localStorage (#2), deduped + capped
+  const [sessions, setSessions] = useState(() =>
+    capSessionsByRecency(dedupeSessionsByTopic(loadSessions()), MAX_SAVED_SESSIONS, null),
+  );
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const activeSessionIdRef = useRef(activeSessionId);
+  useLayoutEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
+
+  const commitSessions = useCallback((updater) => {
+    setSessions((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      return capSessionsByRecency(next, MAX_SAVED_SESSIONS, activeSessionIdRef.current);
+    });
+  }, []);
 
   // Prefill topic for fork flow (carries a node label to the search screen)
   const [prefillTopic, setPrefillTopic] = useState('');
@@ -124,12 +140,22 @@ export default function App() {
     const normalised = topic.trim();
     if (!normalised) return;
     setSearchHistory((prev) => {
-      // Case-insensitive dedup (#5)
       const filtered = prev.filter(
         (t) => t.toLowerCase() !== normalised.toLowerCase(),
       );
-      const next = [normalised, ...filtered].slice(0, 10); // cap at 10 (#5)
-      localStorage.setItem('rabbit-hole-history', JSON.stringify(next));
+      let next = [normalised, ...filtered].slice(0, 10);
+      try {
+        localStorage.setItem('rabbit-hole-history', JSON.stringify(next));
+      } catch (e) {
+        if (isStorageQuotaError(e)) {
+          next = next.slice(0, 5);
+          try {
+            localStorage.setItem('rabbit-hole-history', JSON.stringify(next));
+          } catch {
+            /* give up */
+          }
+        }
+      }
       return next;
     });
   }, []);
@@ -280,20 +306,21 @@ export default function App() {
       shareId,
       pathIds,
     );
-    setSessions((prev) => {
-      // Replace existing session for same activeSessionId if switching back
+    commitSessions((prev) => {
       if (activeSessionId) {
         const exists = prev.some((s) => s.id === activeSessionId);
         if (exists) {
           return prev.map((s) =>
-            s.id === activeSessionId ? { ...session, id: activeSessionId } : s,
+            s.id === activeSessionId
+              ? { ...session, id: activeSessionId, displayName: s.displayName }
+              : s,
           );
         }
       }
       return upsertSessionByTopic(prev, session);
     });
     return session.id;
-  }, [snapshot, currentTopic, mode, activeSessionId, shareId, pathIds]);
+  }, [snapshot, currentTopic, mode, activeSessionId, shareId, pathIds, commitSessions]);
 
   // Switch to a saved session (saves current first)
   const switchToSession = useCallback((id) => {
@@ -301,16 +328,16 @@ export default function App() {
     if (graphData.nodes.length > 0 && activeSessionId) {
       const snap = snapshot();
       const updated = buildSession(currentTopic, mode, snap, shareId, pathIds);
-      setSessions((prev) =>
+      commitSessions((prev) =>
         prev.map((s) =>
           s.id === activeSessionId
-            ? { ...updated, id: s.id }
+            ? { ...updated, id: s.id, displayName: s.displayName }
             : s,
         ),
       );
     }
 
-    setSessions((prev) => {
+    commitSessions((prev) => {
       const target = prev.find((s) => s.id === id);
       if (!target) return prev;
 
@@ -349,12 +376,28 @@ export default function App() {
     activeSessionId,
     shareId,
     pathIds,
+    commitSessions,
   ]);
 
   const deleteSession = useCallback((id) => {
-    setSessions((prev) => prev.filter((s) => s.id !== id));
+    commitSessions((prev) => prev.filter((s) => s.id !== id));
     if (activeSessionId === id) setActiveSessionId(null);
-  }, [activeSessionId]);
+  }, [activeSessionId, commitSessions]);
+
+  const renameSession = useCallback((id, name) => {
+    const trimmed = (name || '').trim();
+    commitSessions((prev) =>
+      prev.map((s) => {
+        if (s.id !== id) return s;
+        if (!trimmed) {
+          const copy = { ...s };
+          delete copy.displayName;
+          return copy;
+        }
+        return { ...s, displayName: trimmed };
+      }),
+    );
+  }, [commitSessions]);
 
   // Wipe all saved sessions, clear live graph, return to home (from sessions drawer)
   const handleClearAllSessions = useCallback(() => {
@@ -408,12 +451,14 @@ export default function App() {
     if (graphData.nodes.length > 0) {
       const snap = snapshot();
       const session = buildSession(currentTopic, mode, snap, shareId, pathIds);
-      setSessions((prev) => {
+      commitSessions((prev) => {
         if (activeSessionId) {
           const exists = prev.some((s) => s.id === activeSessionId);
           if (exists) {
             return prev.map((s) =>
-              s.id === activeSessionId ? { ...session, id: activeSessionId } : s,
+              s.id === activeSessionId
+                ? { ...session, id: activeSessionId, displayName: s.displayName }
+                : s,
             );
           }
         }
@@ -430,7 +475,7 @@ export default function App() {
     setCurrentTopic('');
     setActiveSessionId(null);
     setShareId(null);
-  }, [snapshot, graphData.nodes.length, currentTopic, mode, activeSessionId, shareId, pathIds, reset, resetSessionPath, setSelectedNode, bumpGraphEpoch]);
+  }, [snapshot, graphData.nodes.length, currentTopic, mode, activeSessionId, shareId, pathIds, reset, resetSessionPath, setSelectedNode, bumpGraphEpoch, commitSessions]);
 
   const openFollowUpPanel = useCallback((node) => {
     setFollowUpNode(node);
@@ -534,12 +579,14 @@ export default function App() {
     if (graphData.nodes.length > 0) {
       const snap = snapshot();
       const session = buildSession(currentTopic, mode, snap, shareId, pathIds);
-      setSessions((prev) => {
+      commitSessions((prev) => {
         if (activeSessionId) {
           const exists = prev.some((s) => s.id === activeSessionId);
           if (exists) {
             return prev.map((s) =>
-              s.id === activeSessionId ? { ...session, id: activeSessionId } : s,
+              s.id === activeSessionId
+                ? { ...session, id: activeSessionId, displayName: s.displayName }
+                : s,
             );
           }
         }
@@ -570,6 +617,7 @@ export default function App() {
           sessions={sessions}
           activeSessionId={activeSessionId}
           onSwitchSession={switchToSession}
+          onOpenSessions={() => setSessionsOpen(true)}
           prefillTopic={prefillTopic}
           staticPicks={staticPicks}
         />
@@ -827,6 +875,7 @@ export default function App() {
         onClose={() => setSessionsOpen(false)}
         onSwitch={switchToSession}
         onDelete={deleteSession}
+        onRenameSession={renameSession}
         onClearAll={handleClearAllSessions}
       />
 

@@ -47,7 +47,22 @@ export const STATIC_TOPICS = [
   'Supply Chain Economics'
 ];
 
-export default function SearchBar({ onSearch, isLoading, mode, onModeChange, sessions = [], activeSessionId, onSwitchSession, prefillTopic = '', staticPicks = [] }) {
+function sessionListTitle(s) {
+  return (s.displayName && String(s.displayName).trim()) || s.topic;
+}
+
+export default function SearchBar({
+  onSearch,
+  isLoading,
+  mode,
+  onModeChange,
+  sessions = [],
+  activeSessionId,
+  onSwitchSession,
+  onOpenSessions,
+  prefillTopic = '',
+  staticPicks = [],
+}) {
   const [topic, setTopic] = useState(prefillTopic);
   const [submittedTopic, setSubmittedTopic] = useState('');
   const [trendingTopics, setTrendingTopics] = useState([]);
@@ -270,7 +285,7 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, ses
               </button>
             </form>
 
-            {/* Active explorations — resume saved sessions */}
+            {/* Recent sessions (2) + Sessions drawer */}
             {sortedSessions.length > 0 && (
               <div className="mt-5">
                 <p className="text-white/20 text-xs mb-2 uppercase tracking-widest flex items-center justify-center gap-1.5">
@@ -280,12 +295,18 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, ses
                   </svg>
                   Continue exploring
                 </p>
-                <div className="flex gap-2 overflow-x-auto pb-1 justify-center flex-wrap">
-                  {sortedSessions.map((s) => {
+                {sortedSessions.length > 2 && (
+                  <p className="text-white/25 text-xs text-center mb-2">
+                    Showing 2 most recent — open Sessions for all {sortedSessions.length}.
+                  </p>
+                )}
+                <div className="flex gap-2 overflow-x-auto pb-1 justify-center flex-wrap items-stretch">
+                  {sortedSessions.slice(0, 2).map((s) => {
                     const isActive = s.id === activeSessionId;
                     return (
                       <button
                         key={s.id}
+                        type="button"
                         onClick={() => onSwitchSession?.(s.id)}
                         className="flex-shrink-0 flex flex-col items-start gap-1 px-3 py-2 rounded-xl text-left transition-all"
                         style={{
@@ -297,7 +318,7 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, ses
                         }}
                       >
                         <span className="text-xs font-semibold text-white/80 truncate w-full">
-                          {s.topic}
+                          {sessionListTitle(s)}
                         </span>
                         <span className="text-white/30 text-xs">
                           {s.nodeCount} nodes
@@ -305,6 +326,25 @@ export default function SearchBar({ onSearch, isLoading, mode, onModeChange, ses
                       </button>
                     );
                   })}
+                  <button
+                    type="button"
+                    onClick={() => onOpenSessions?.()}
+                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all border
+                      border-purple-500/30 text-purple-300 hover:bg-purple-500/10 self-stretch"
+                    style={{ background: 'rgba(168,85,247,0.08)' }}
+                  >
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                    Sessions
+                    <span
+                      className="flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full text-xs font-bold text-white"
+                      style={{ background: 'rgba(168,85,247,0.6)' }}
+                    >
+                      {sortedSessions.length}
+                    </span>
+                  </button>
                 </div>
               </div>
             )}

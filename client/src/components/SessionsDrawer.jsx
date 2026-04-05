@@ -7,7 +7,20 @@ function timeAgo(ts) {
   return `${Math.floor(diff / 3600)}h ago`;
 }
 
-export default function SessionsDrawer({ sessions, activeSessionId, isOpen, onClose, onSwitch, onDelete, onClearAll }) {
+function sessionPrimaryLabel(s) {
+  return (s.displayName && String(s.displayName).trim()) || s.topic;
+}
+
+export default function SessionsDrawer({
+  sessions,
+  activeSessionId,
+  isOpen,
+  onClose,
+  onSwitch,
+  onDelete,
+  onRenameSession,
+  onClearAll,
+}) {
   const sortedSessions = useMemo(
     () => [...sessions].sort((a, b) => (b.lastUsedAt ?? b.createdAt ?? 0) - (a.lastUsedAt ?? a.createdAt ?? 0)),
     [sessions],
@@ -42,7 +55,7 @@ export default function SessionsDrawer({ sessions, activeSessionId, isOpen, onCl
           <div className="min-w-0 flex-1">
             <h2 className="text-white font-bold text-base">Your Explorations</h2>
             <p className="text-white/35 text-xs mt-0.5">
-              {sessions.length} active exploration{sessions.length !== 1 ? 's' : ''}
+              {sessions.length} saved — rename or delete to organize
             </p>
             {sessions.length > 0 && onClearAll && (
               <button
@@ -60,6 +73,7 @@ export default function SessionsDrawer({ sessions, activeSessionId, isOpen, onCl
             )}
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition-colors"
           >
@@ -82,6 +96,8 @@ export default function SessionsDrawer({ sessions, activeSessionId, isOpen, onCl
           ) : (
             sortedSessions.map((s) => {
               const isActive = s.id === activeSessionId;
+              const primary = sessionPrimaryLabel(s);
+              const renamed = Boolean(s.displayName && String(s.displayName).trim());
               return (
                 <div
                   key={s.id}
@@ -96,7 +112,7 @@ export default function SessionsDrawer({ sessions, activeSessionId, isOpen, onCl
                   }}
                   onClick={() => onSwitch(s.id)}
                 >
-                  {/* Top row: topic + delete */}
+                  {/* Top row: topic + actions */}
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
@@ -120,24 +136,49 @@ export default function SessionsDrawer({ sessions, activeSessionId, isOpen, onCl
                         </span>
                       </div>
                       <p className="text-white font-semibold text-sm leading-tight truncate">
-                        {s.topic}
+                        {primary}
                       </p>
-                      {s.rootLabel && s.rootLabel !== s.topic && (
+                      {renamed && (
+                        <p className="text-white/35 text-xs mt-0.5 truncate">Topic: {s.topic}</p>
+                      )}
+                      {!renamed && s.rootLabel && s.rootLabel !== s.topic && (
                         <p className="text-white/40 text-xs mt-0.5 truncate">{s.rootLabel}</p>
                       )}
                     </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onDelete(s.id); }}
-                      className="flex-shrink-0 p-1 rounded-lg text-white/25 hover:text-red-400 hover:bg-red-400/10 transition-colors"
-                    >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
+                    <div className="flex flex-shrink-0 items-center gap-0.5">
+                      {onRenameSession && (
+                        <button
+                          type="button"
+                          title="Rename"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const next = window.prompt('Name this exploration', primary);
+                            if (next === null) return;
+                            onRenameSession(s.id, next);
+                          }}
+                          className="p-1 rounded-lg text-white/25 hover:text-purple-300 hover:bg-white/10 transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                              d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                          </svg>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        title="Remove"
+                        onClick={(e) => { e.stopPropagation(); onDelete(s.id); }}
+                        className="p-1 rounded-lg text-white/25 hover:text-red-400 hover:bg-red-400/10 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
 
                   {/* Preview node chips */}
-                  {s.previewNodes.length > 0 && (
+                  {(s.previewNodes?.length ?? 0) > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-3">
                       {s.previewNodes.map((label) => (
                         <span
