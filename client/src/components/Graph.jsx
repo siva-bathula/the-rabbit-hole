@@ -40,8 +40,8 @@ function getDisplayLabel(label, isMobile) {
   return words[0] + '…';
 }
 
-/** Shorter on-canvas labels during path replay to reduce overlap on dense graphs. */
-function getReplayDisplayLabel(label) {
+/** Shorter on-canvas labels (replay + main graph) to reduce overlap on dense graphs. */
+function getCompactCanvasLabel(label) {
   if (!label || typeof label !== 'string') return '';
   const max = 22;
   if (label.length <= max) return label;
@@ -49,6 +49,10 @@ function getReplayDisplayLabel(label) {
   const lastSpace = slice.lastIndexOf(' ');
   const cut = lastSpace > 12 ? lastSpace : max;
   return `${label.slice(0, cut).trimEnd()}…`;
+}
+
+function getReplayDisplayLabel(label) {
+  return getCompactCanvasLabel(label);
 }
 
 function getNodeRadius(node) {
@@ -63,8 +67,7 @@ const REPLAY_CURRENT = '#FDE047';
 
 /** Must match ForceGraph2D minZoom / maxZoom props (ref does not expose minZoom/maxZoom). */
 const GRAPH_MIN_ZOOM = 0.22;
-const GRAPH_MAX_ZOOM_DEFAULT = 6;
-/** Replay max zoom — only user +/- changes level between steps (steps use pan-only centerAt). */
+const GRAPH_MAX_ZOOM_DEFAULT = 10;
 const GRAPH_MAX_ZOOM_REPLAY = 10;
 
 /**
@@ -270,7 +273,8 @@ const Graph = forwardRef(function Graph(
       });
 
       const rootChildren = graphData.nodes.filter((n) => rootChildIds.has(n.id));
-      const RING_R = 190;
+      const nKids = rootChildren.length;
+      const RING_R = Math.min(320, Math.max(190, 150 + nKids * 14));
       rootChildren.forEach((node, i) => {
         const angle = (i / rootChildren.length) * 2 * Math.PI - Math.PI / 2;
         const px = RING_R * Math.cos(angle);
@@ -294,12 +298,14 @@ const Graph = forwardRef(function Graph(
     if (widthOverride != null) return;
     if (replayOpen) return;
     if (hasNodes && fgRef.current) {
+      const n = graphData.nodes.length;
+      const padding = Math.min(168, 52 + n * 5);
       const timer = setTimeout(() => {
-        fgRef.current?.zoomToFit(600, 80);
+        fgRef.current?.zoomToFit(600, padding);
       }, 800);
       return () => clearTimeout(timer);
     }
-  }, [hasNodes, widthOverride, replayOpen]);
+  }, [hasNodes, widthOverride, replayOpen, graphData.nodes.length]);
 
   const isMobile = width < 640;
 
@@ -413,7 +419,7 @@ const Graph = forwardRef(function Graph(
         ctx.stroke();
       }
 
-      // Label below node
+      // Label below node — compact on canvas; full text on hover (nodeLabel)
       const fontSize = Math.max(13 / globalScale, 3);
       ctx.font = `500 ${fontSize}px Inter, system-ui, sans-serif`;
       ctx.textAlign = 'center';
@@ -424,9 +430,13 @@ const Graph = forwardRef(function Graph(
       const labelAlpha = replayVisual && !replayVisual.pathSet.has(node.id) ? 0.35 : 1;
       ctx.save();
       ctx.globalAlpha = labelAlpha;
+      const fullLabel = node.label || '';
+      const compact = getCompactCanvasLabel(fullLabel);
       const labelText = replayVisual
-        ? getReplayDisplayLabel(node.label)
-        : getDisplayLabel(node.label, isMobile);
+        ? compact
+        : isMobile
+          ? getDisplayLabel(compact, true)
+          : compact;
       ctx.fillText(labelText, node.x, node.y + r + 4 / globalScale);
       ctx.restore();
     },
@@ -469,29 +479,31 @@ const Graph = forwardRef(function Graph(
     ctx.fillStyle = color;
     ctx.fill();
 
-    if (replayVisual?.pathSet?.has(node.id)) {
-      const full = node.label || '';
-      if (!full) return;
-      const short = getReplayDisplayLabel(full);
-      if (short === full) return;
-      const r = getNodeRadius(node);
-      const fontSize = Math.max(13 / gs, 3);
-      ctx.font = `500 ${fontSize}px Inter, system-ui, sans-serif`;
-      const tw = ctx.measureText(short).width;
-      const lineH = fontSize * 1.28;
-      const pad = 4 / gs;
-      const topY = node.y + r + 4 / gs - pad;
-      const leftX = node.x - tw / 2 - pad;
-      const rw = tw + 2 * pad;
-      const rh = lineH + 2 * pad;
-      ctx.fillStyle = color;
-      if (typeof ctx.roundRect === 'function') {
-        ctx.beginPath();
-        ctx.roundRect(leftX, topY, rw, rh, 3 / gs);
-        ctx.fill();
-      } else {
-        ctx.fillRect(leftX, topY, rw, rh);
-      }
+    const full = node.label || '';
+    if (!full) return;
+    const short = getCompactCanvasLabel(full);
+    if (short === full) return;
+    const showHit =
+      replayVisual?.pathSet?.has(node.id) ||
+      (!replayVisual && short !== full);
+    if (!showHit) return;
+    const r = getNodeRadius(node);
+    const fontSize = Math.max(13 / gs, 3);
+    ctx.font = `500 ${fontSize}px Inter, system-ui, sans-serif`;
+    const tw = ctx.measureText(short).width;
+    const lineH = fontSize * 1.28;
+    const pad = 4 / gs;
+    const topY = node.y + r + 4 / gs - pad;
+    const leftX = node.x - tw / 2 - pad;
+    const rw = tw + 2 * pad;
+    const rh = lineH + 2 * pad;
+    ctx.fillStyle = color;
+    if (typeof ctx.roundRect === 'function') {
+      ctx.beginPath();
+      ctx.roundRect(leftX, topY, rw, rh, 3 / gs);
+      ctx.fill();
+    } else {
+      ctx.fillRect(leftX, topY, rw, rh);
     }
   }, [replayVisual]);
 
@@ -502,11 +514,19 @@ const Graph = forwardRef(function Graph(
       if (!replayVisual?.pathSet?.has(n.id)) return '';
       const full = n.label || '';
       if (!full) return '';
-      const short = getReplayDisplayLabel(full);
+      const short = getCompactCanvasLabel(full);
       return short !== full ? full : '';
     },
     [replayVisual],
   );
+
+  const mainGraphNodeLabel = useCallback((n) => {
+    if (replayVisual) return '';
+    const full = n.label || '';
+    if (!full) return '';
+    const short = getCompactCanvasLabel(full);
+    return short !== full ? full : '';
+  }, [replayVisual]);
 
   const onReplayEngineStop = useCallback(() => {
     const p = replayCenterPendingRef.current;
@@ -526,7 +546,7 @@ const Graph = forwardRef(function Graph(
       nodeCanvasObject={drawNode}
       nodeCanvasObjectMode={() => 'replace'}
       nodePointerAreaPaint={paintPointerArea}
-      nodeLabel={replayVisual ? replayNodeLabel : undefined}
+      nodeLabel={replayVisual ? replayNodeLabel : mainGraphNodeLabel}
       onNodeClick={replayLocked ? () => {} : onNodeClick}
       linkColor={() =>
         replayLocked ? 'rgba(148,163,184,0.12)' : 'rgba(148,163,184,0.55)'

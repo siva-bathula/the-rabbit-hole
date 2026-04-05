@@ -21,6 +21,10 @@ import {
 } from './lib/persist.js';
 import { isNewsAnchoredSessionTopic } from './lib/newsTopic.js';
 
+/** Same step as PathReplayOverlay — graph view zoom buttons */
+const GRAPH_VIEW_ZOOM_IN = 1.32;
+const GRAPH_VIEW_ZOOM_OUT = 1 / GRAPH_VIEW_ZOOM_IN;
+
 function buildSession(topic, mode, snap, shareId = null, explorationPathIds = []) {
   const previewNodes = snap.graphData.nodes
     .filter((n) => n.id !== 'root')
@@ -232,6 +236,7 @@ export default function App() {
   // changes. Guard: don't save while a fetch is in-flight (graphData is empty
   // during explore) or before the restore-on-mount effect has run.
   const restoredRef = useRef(false);
+  const graphViewRef = useRef(null);
   const persistLive = useCallback(() => {
     if (!restoredRef.current) return;
     const snap = snapshot();
@@ -574,6 +579,20 @@ export default function App() {
     setMode((m) => (m === 'fast' ? 'slow' : 'fast'));
   }, []);
 
+  const handleGraphZoomIn = useCallback(() => {
+    graphViewRef.current?.zoomByFactor?.(GRAPH_VIEW_ZOOM_IN, 160);
+  }, []);
+
+  const handleGraphZoomOut = useCallback(() => {
+    graphViewRef.current?.zoomByFactor?.(GRAPH_VIEW_ZOOM_OUT, 160);
+  }, []);
+
+  const handleGraphFitView = useCallback(() => {
+    const n = graphData.nodes.length;
+    const padding = Math.min(168, 52 + n * 5);
+    graphViewRef.current?.zoomToFit?.(500, padding);
+  }, [graphData.nodes.length]);
+
   const handleNewSearch = () => {
     // Save live graph before going home
     if (graphData.nodes.length > 0) {
@@ -629,6 +648,7 @@ export default function App() {
           {mode === 'fast' && (
             <>
               <Graph
+                ref={graphViewRef}
                 graphData={graphData}
                 selectedNode={selectedNode}
                 expandedNodes={expandedNodes}
@@ -636,6 +656,58 @@ export default function App() {
                 onNodeClick={handleNodeClick}
                 readNodeIds={explorationReadIds}
               />
+
+              <div className="absolute top-[4.5rem] sm:top-16 left-3 sm:left-4 z-30 flex flex-col gap-1.5 pointer-events-auto">
+                <button
+                  type="button"
+                  onClick={handleGraphZoomIn}
+                  disabled={graphData.nodes.length === 0 || isExploring}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl text-white/85 transition-colors hover:bg-white/12 hover:text-white
+                    disabled:opacity-35 disabled:cursor-not-allowed"
+                  style={{
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                  }}
+                  aria-label="Zoom in"
+                  title="Zoom in"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGraphZoomOut}
+                  disabled={graphData.nodes.length === 0 || isExploring}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl text-white/85 transition-colors hover:bg-white/12 hover:text-white
+                    disabled:opacity-35 disabled:cursor-not-allowed"
+                  style={{
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                  }}
+                  aria-label="Zoom out"
+                  title="Zoom out"
+                >
+                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGraphFitView}
+                  disabled={graphData.nodes.length === 0 || isExploring}
+                  className="flex h-10 w-10 items-center justify-center rounded-xl text-white/75 text-xs font-semibold transition-colors hover:bg-white/12 hover:text-white
+                    disabled:opacity-35 disabled:cursor-not-allowed"
+                  style={{
+                    background: 'rgba(255,255,255,0.06)',
+                    border: '1px solid rgba(255,255,255,0.12)',
+                  }}
+                  aria-label="Fit graph to view"
+                  title="Fit entire graph"
+                >
+                  Fit
+                </button>
+              </div>
 
               {selectedNode && (
                 <NodeOverlay
