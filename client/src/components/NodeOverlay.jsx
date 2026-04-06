@@ -245,12 +245,15 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
 
             {/* Header */}
             <div className="px-6 pt-3 pb-4 border-b border-white/10 flex-shrink-0">
-              <div className="flex items-start justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-3 min-w-0">
+                <div className="min-w-0 flex-1">
                   <span className="text-xs font-medium uppercase tracking-widest text-purple-400 mb-1 block">
                     Exploring
                   </span>
-                  <h2 className="text-2xl font-bold text-white">
+                  <h2
+                    className="text-xl sm:text-2xl font-bold text-white leading-snug line-clamp-2 sm:line-clamp-3 pr-1"
+                    title={node.label}
+                  >
                     {node.label}
                   </h2>
                 </div>
@@ -265,9 +268,9 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
               </div>
 
               {/* Explain depth toggle */}
-              <div className="flex items-center gap-2 mt-3">
-                <span className="text-white/30 text-xs">Depth:</span>
-                <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg" style={{ background: 'rgba(255,255,255,0.07)' }}>
+              <div className="flex flex-wrap items-center gap-2 mt-3 min-w-0">
+                <span className="text-white/30 text-xs flex-shrink-0">Depth:</span>
+                <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg flex-shrink-0" style={{ background: 'rgba(255,255,255,0.07)' }}>
                   {MODES.map(({ id, label }) => (
                     <button
                       key={id}

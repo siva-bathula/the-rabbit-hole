@@ -88,15 +88,18 @@ export default function FolderTree({ graphData, currentNodeId, visitedIds, rootL
   const tree = buildTree(nodes, links, 'root');
 
   return (
-    <div className="h-full overflow-y-auto py-4">
-      {/* Root label */}
+    <div className="h-full overflow-y-auto py-4 pl-4 pr-4 max-sm:pr-14">
+      {/* Root label — extra right padding on narrow viewports so text clears the purple sidebar tab + glow */}
       <div
-        className="px-4 pb-3 mb-1 border-b"
+        className="pb-3 mb-1 border-b min-w-0"
         style={{ borderColor: 'rgba(255,255,255,0.08)' }}
       >
-        <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
-          <span className="text-white/80 font-semibold text-xs leading-tight">
+        <div className="flex items-start gap-2 min-w-0" style={{ paddingTop: '1rem' }}>
+          <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0 mt-0.5" />
+          <span
+            className="text-white/80 font-semibold text-xs leading-tight min-w-0 line-clamp-3 break-words"
+            title={rootLabel || rootNode.label}
+          >
             {rootLabel || rootNode.label}
           </span>
         </div>
