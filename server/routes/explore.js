@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { generateNodes } from '../services/deepseek.js';
+import { isExploreDebug } from '../lib/exploreDebugLog.js';
 import {
   fetchArticlePlainText,
   mergeArticleIntoGrounding,
@@ -91,6 +92,15 @@ router.post('/', async (req, res) => {
     });
 
     if (!raw.nodes || !raw.edges) {
+      if (isExploreDebug()) {
+        console.error('[explore-debug] /api/explore: rejecting response — missing nodes or edges (point 3)', {
+          topicPreview: topicTrim.slice(0, 120),
+          topKeys: raw && typeof raw === 'object' ? Object.keys(raw) : [],
+          errorField: typeof raw?.error === 'string' ? raw.error : undefined,
+          nodes: Array.isArray(raw?.nodes) ? `array(len=${raw.nodes.length})` : raw?.nodes,
+          edges: Array.isArray(raw?.edges) ? `array(len=${raw.edges.length})` : raw?.edges,
+        });
+      }
       return res.status(500).json({ error: 'Invalid response from AI' });
     }
 
@@ -98,6 +108,13 @@ router.post('/', async (req, res) => {
     res.json({ ...data, groundingContext: effectiveGrounding });
   } catch (err) {
     console.error('[explore]', err.message);
+    if (isExploreDebug()) {
+      console.error('[explore-debug] /api/explore: caught error (often JSON.parse or API)', {
+        message: err?.message,
+        name: err?.name,
+        stack: err?.stack,
+      });
+    }
     res.status(500).json({ error: 'Failed to generate knowledge graph' });
   }
 });

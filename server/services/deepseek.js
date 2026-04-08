@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { isExploreDebug } from '../lib/exploreDebugLog.js';
 
 const client = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY,
@@ -12,6 +13,31 @@ const geminiClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const GEMINI_MODEL_FLASH_LITE = 'gemini-2.5-flash-lite';
 const GEMINI_MODEL_FLASH = 'gemini-2.5-flash';
 const GEMINI_MODEL_PRO = 'gemini-2.5-pro';
+
+/** Consecutive gemini-2.5-flash failures before switching graph calls to flash-lite (override with GEMINI_FLASH_FAIL_THRESHOLD). */
+const GEMINI_FLASH_FAIL_THRESHOLD = Math.max(1, Number(process.env.GEMINI_FLASH_FAIL_THRESHOLD || 5));
+let geminiFlashFailureStreak = 0;
+let geminiGraphUseFlashLite = false;
+
+function currentGeminiGraphModel() {
+  return geminiGraphUseFlashLite ? GEMINI_MODEL_FLASH_LITE : GEMINI_MODEL_FLASH;
+}
+
+function markGeminiGraphSucceeded() {
+  geminiFlashFailureStreak = 0;
+}
+
+function markGeminiGraphFailed(err) {
+  if (geminiGraphUseFlashLite) return;
+  geminiFlashFailureStreak += 1;
+  if (geminiFlashFailureStreak >= GEMINI_FLASH_FAIL_THRESHOLD) {
+    geminiGraphUseFlashLite = true;
+    console.warn(
+      `[gemini] ${GEMINI_FLASH_FAIL_THRESHOLD} consecutive ${GEMINI_MODEL_FLASH} failures; using ${GEMINI_MODEL_FLASH_LITE} for generateNodes, expandNode, generateQuiz until server restart.`,
+      err?.message || err,
+    );
+  }
+}
 
 // Full guardrail ? used on user-facing free-text inputs (main search, follow-up)
 const SAFETY_GUARDRAIL = `You are a safe, responsible, and ethical AI assistant.
@@ -174,7 +200,7 @@ ${childCountLine}
 7. Child node labels should be concise (1-4 words max).`;
 
   const model = geminiClient.getGenerativeModel({
-    model: GEMINI_MODEL_FLASH,
+    model: currentGeminiGraphModel(),
     systemInstruction,
     generationConfig: {
       responseMimeType: 'application/json',
@@ -187,11 +213,63 @@ ${childCountLine}
     : `Topic: ${topic}`;
   userPrompt += sourceGroundingSuffix(newsGrounding);
 
-  const result = await model.generateContent(userPrompt);
-  const text = result.response.text();
+  try {
+    const result = await model.generateContent(userPrompt);
+    let text;
+    try {
+      text = result.response.text();
+    } catch (textErr) {
+      if (isExploreDebug()) {
+        console.error('[explore-debug] generateNodes: response.text() threw', {
+          message: textErr?.message,
+          topicPreview: String(topic).slice(0, 120),
+        });
+      }
+      throw textErr;
+    }
 
-  console.log(`[generateNodes] "${topic}" ? ${Date.now() - t0}ms`);
-  return JSON.parse(text);
+    console.log(`[generateNodes] "${topic}" ? ${Date.now() - t0}ms`);
+
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch (parseErr) {
+      if (isExploreDebug()) {
+        const len = text?.length ?? 0;
+        const head = (text || '').slice(0, 800);
+        const tail = len > 800 ? (text || '').slice(-400) : '';
+        console.error('[explore-debug] generateNodes: JSON.parse failed (point 2)', {
+          message: parseErr?.message,
+          topicPreview: String(topic).slice(0, 120),
+          textLength: len,
+          textHead: head,
+          ...(tail ? { textTail: tail } : {}),
+        });
+      }
+      throw parseErr;
+    }
+
+    if (isExploreDebug()) {
+      const missingNodes = !parsed?.nodes;
+      const missingEdges = !parsed?.edges;
+      const safetyError = typeof parsed?.error === 'string';
+      if (safetyError || missingNodes || missingEdges) {
+        console.error('[explore-debug] generateNodes: invalid graph shape after parse (point 3)', {
+          topicPreview: String(topic).slice(0, 120),
+          topKeys: parsed && typeof parsed === 'object' ? Object.keys(parsed) : [],
+          safetyErrorField: safetyError ? parsed.error : undefined,
+          nodes: Array.isArray(parsed?.nodes) ? `array(len=${parsed.nodes.length})` : parsed?.nodes,
+          edges: Array.isArray(parsed?.edges) ? `array(len=${parsed.edges.length})` : parsed?.edges,
+        });
+      }
+    }
+
+    markGeminiGraphSucceeded();
+    return parsed;
+  } catch (err) {
+    markGeminiGraphFailed(err);
+    throw err;
+  }
 }
 
 export async function expandNode(
@@ -230,7 +308,7 @@ Rules:
 7. Labels should be concise (1-4 words max)`;
 
   const model = geminiClient.getGenerativeModel({
-    model: GEMINI_MODEL_FLASH,
+    model: currentGeminiGraphModel(),
     systemInstruction,
     generationConfig: {
       responseMimeType: 'application/json',
@@ -238,25 +316,31 @@ Rules:
     },
   });
 
-  const result = await model.generateContent(
-    `${userPrefix}Concept to expand: "${nodeLabel}"\nContext/parent topic: ${parentContext}\nAlready in graph (do not repeat): ${existingLabels.join(', ')}${sourceGroundingSuffix(groundingContext)}`
-  );
+  try {
+    const result = await model.generateContent(
+      `${userPrefix}Concept to expand: "${nodeLabel}"\nContext/parent topic: ${parentContext}\nAlready in graph (do not repeat): ${existingLabels.join(', ')}${sourceGroundingSuffix(groundingContext)}`
+    );
 
-  console.log(`[expandNode] "${nodeLabel}" ? ${Date.now() - t0}ms`);
-  const data = JSON.parse(result.response.text());
+    console.log(`[expandNode] "${nodeLabel}" ? ${Date.now() - t0}ms`);
+    const data = JSON.parse(result.response.text());
 
-  // Namespace all new node IDs to avoid collisions
-  const prefix = nodeId.replace(/[^a-zA-Z0-9]/g, '_');
-  const remappedNodes = data.nodes.map((n) => ({
-    ...n,
-    id: `${prefix}_${n.id}`,
-  }));
-  const remappedEdges = data.edges.map((e) => ({
-    source: e.source === 'parent' ? nodeId : `${prefix}_${e.source}`,
-    target: e.target === 'parent' ? nodeId : `${prefix}_${e.target}`,
-  }));
+    // Namespace all new node IDs to avoid collisions
+    const prefix = nodeId.replace(/[^a-zA-Z0-9]/g, '_');
+    const remappedNodes = data.nodes.map((n) => ({
+      ...n,
+      id: `${prefix}_${n.id}`,
+    }));
+    const remappedEdges = data.edges.map((e) => ({
+      source: e.source === 'parent' ? nodeId : `${prefix}_${e.source}`,
+      target: e.target === 'parent' ? nodeId : `${prefix}_${e.target}`,
+    }));
 
-  return { nodes: remappedNodes, edges: remappedEdges };
+    markGeminiGraphSucceeded();
+    return { nodes: remappedNodes, edges: remappedEdges };
+  } catch (err) {
+    markGeminiGraphFailed(err);
+    throw err;
+  }
 }
 
 const CODE_KEYWORDS = [
@@ -515,7 +599,7 @@ Rules:
 Return ONLY a JSON object: { "questions": [ { "question": "...", "options": ["...", "...", "...", "..."], "correct": 0, "explanation": "..." } ] }`;
 
   const model = geminiClient.getGenerativeModel({
-    model: GEMINI_MODEL_FLASH,
+    model: currentGeminiGraphModel(),
     systemInstruction,
     generationConfig: {
       responseMimeType: 'application/json',
@@ -523,14 +607,20 @@ Return ONLY a JSON object: { "questions": [ { "question": "...", "options": ["..
     },
   });
 
-  const result = await model.generateContent(
-    `Topic: "${nodeLabel}"\n\n${contentBlock}\n\nGenerate 5 quiz questions on this.`
-  );
+  try {
+    const result = await model.generateContent(
+      `Topic: "${nodeLabel}"\n\n${contentBlock}\n\nGenerate 5 quiz questions on this.`
+    );
 
-  console.log(`[generateQuiz] "${nodeLabel}" ? ${Date.now() - t0}ms`);
-  const data = JSON.parse(result.response.text());
-  if (!Array.isArray(data.questions) || data.questions.length === 0) {
-    throw new Error('Invalid quiz response from AI');
+    console.log(`[generateQuiz] "${nodeLabel}" ? ${Date.now() - t0}ms`);
+    const data = JSON.parse(result.response.text());
+    if (!Array.isArray(data.questions) || data.questions.length === 0) {
+      throw new Error('Invalid quiz response from AI');
+    }
+    markGeminiGraphSucceeded();
+    return data.questions.slice(0, 5);
+  } catch (err) {
+    markGeminiGraphFailed(err);
+    throw err;
   }
-  return data.questions.slice(0, 5);
 }
