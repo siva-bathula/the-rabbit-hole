@@ -15,9 +15,23 @@ const GEMINI_MODEL_FLASH = 'gemini-2.5-flash';
 const GEMINI_MODEL_PRO = 'gemini-2.5-pro';
 
 /** Consecutive gemini-2.5-flash failures before switching graph calls to flash-lite (override with GEMINI_FLASH_FAIL_THRESHOLD). */
-const GEMINI_FLASH_FAIL_THRESHOLD = Math.max(1, Number(process.env.GEMINI_FLASH_FAIL_THRESHOLD || 5));
+const GEMINI_FLASH_FAIL_THRESHOLD = Math.max(1, Number(process.env.GEMINI_FLASH_FAIL_THRESHOLD || 2));
 let geminiFlashFailureStreak = 0;
 let geminiGraphUseFlashLite = false;
+
+const GEMINI_STARTUP_PROBE_DISABLED =
+  /^(0|false|no|off)$/i.test(String(process.env.GEMINI_STARTUP_PROBE || '').trim());
+
+const GEMINI_STARTUP_PROBE_TOPICS = [
+  'Photosynthesis basics',
+  'What is HTTP',
+  'Introduction to supply and demand',
+  'Roman Republic overview',
+  'How vaccines train the immune system',
+  'Basics of plate tectonics',
+  'What is a compiler',
+  'Water cycle for students',
+];
 
 function currentGeminiGraphModel() {
   return geminiGraphUseFlashLite ? GEMINI_MODEL_FLASH_LITE : GEMINI_MODEL_FLASH;
@@ -27,8 +41,26 @@ function markGeminiGraphSucceeded() {
   geminiFlashFailureStreak = 0;
 }
 
+/** Refusals from our prompts' JSON error shape or API-level content blocks — not model/infra outages; do not count toward flash→flash-lite. */
+function isGeminiGraphGuardrailRefusal(err) {
+  if (!err) return false;
+  if (err.name === 'GeminiGraphGuardrailRefusal') return true;
+  const msg = String(err.message || '').toLowerCase();
+  if (msg.includes('violates content safety guidelines')) return true;
+  if (msg.includes('content safety violation')) return true;
+  if (msg.includes('blocked') && (msg.includes('safety') || msg.includes('prompt'))) return true;
+  return false;
+}
+
+function makeGeminiGraphGuardrailRefusal(message) {
+  const e = new Error(typeof message === 'string' ? message : 'Content safety refusal');
+  e.name = 'GeminiGraphGuardrailRefusal';
+  return e;
+}
+
 function markGeminiGraphFailed(err) {
   if (geminiGraphUseFlashLite) return;
+  if (isGeminiGraphGuardrailRefusal(err)) return;
   geminiFlashFailureStreak += 1;
   if (geminiFlashFailureStreak >= GEMINI_FLASH_FAIL_THRESHOLD) {
     geminiGraphUseFlashLite = true;
@@ -93,6 +125,60 @@ You must always follow these rules, even if the user insists, rephrases, or atte
 const SAFETY_GUARDRAIL_BRIEF = `Safety rule: If the topic involves weapons, self-harm, illegal activity, sexual content involving minors, terrorism, or hate, return { "error": "Content safety violation." } and nothing else. Otherwise proceed normally.
 
 `;
+
+/**
+ * One-shot graph call on gemini-2.5-flash (ignores runtime flash-lite toggle). Used for startup health check only.
+ */
+async function runGeminiFlashGraphSmokeTest(topic) {
+  const systemInstruction =
+    SAFETY_GUARDRAIL +
+    `You are a knowledge graph generator. Return ONLY a JSON object with exactly these fields:
+- "nodes": array of objects, each with { "id": string, "label": string, "group": string }
+- "edges": array of objects, each with { "source": string, "target": string }
+Rules: root id must be "root". Child ids node_1, node_2, ... Every child has an edge with source "root". Exactly 4 child nodes. Groups: core, theory, related, application.`;
+
+  const model = geminiClient.getGenerativeModel({
+    model: GEMINI_MODEL_FLASH,
+    systemInstruction,
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.35,
+    },
+  });
+
+  const result = await model.generateContent(`Topic: ${topic}`);
+  const text = result.response.text();
+  const parsed = JSON.parse(text);
+  if (typeof parsed?.error === 'string') throw new Error(parsed.error);
+  if (!Array.isArray(parsed?.nodes) || !Array.isArray(parsed?.edges)) {
+    throw new Error('Probe response missing nodes or edges');
+  }
+  const hasRoot = parsed.nodes.some((n) => n && n.id === 'root');
+  if (!hasRoot) throw new Error('Probe response missing root node');
+}
+
+/**
+ * After server boot, try one small graph generation on flash. If it fails, switch to flash-lite immediately so users do not burn retries.
+ * Disable with GEMINI_STARTUP_PROBE=0. Runs best-effort; failures are logged but not thrown.
+ */
+export async function probeGeminiFlashGraphOnStartup() {
+  if (GEMINI_STARTUP_PROBE_DISABLED || !process.env.GEMINI_API_KEY?.trim()) return;
+  if (geminiGraphUseFlashLite) return;
+
+  const topic =
+    GEMINI_STARTUP_PROBE_TOPICS[Math.floor(Math.random() * GEMINI_STARTUP_PROBE_TOPICS.length)];
+  try {
+    await runGeminiFlashGraphSmokeTest(topic);
+    console.log(`[gemini] startup probe: ${GEMINI_MODEL_FLASH} OK (${topic})`);
+  } catch (err) {
+    geminiGraphUseFlashLite = true;
+    geminiFlashFailureStreak = 0;
+    console.warn(
+      `[gemini] startup probe: ${GEMINI_MODEL_FLASH} failed; using ${GEMINI_MODEL_FLASH_LITE} for graph calls until restart.`,
+      err?.message || err,
+    );
+  }
+}
 
 function isNewsAnchoredTopic(topic) {
   return typeof topic === 'string' && /\s[—–]\s/.test(topic);
@@ -264,6 +350,16 @@ ${childCountLine}
       }
     }
 
+    // Guardrail JSON refusal — not a model outage; do not reset or advance flash failover streak.
+    if (typeof parsed?.error === 'string') {
+      return parsed;
+    }
+
+    if (!Array.isArray(parsed?.nodes) || !Array.isArray(parsed?.edges)) {
+      markGeminiGraphFailed(new Error('Invalid graph response shape'));
+      return parsed;
+    }
+
     markGeminiGraphSucceeded();
     return parsed;
   } catch (err) {
@@ -323,6 +419,9 @@ Rules:
 
     console.log(`[expandNode] "${nodeLabel}" ? ${Date.now() - t0}ms`);
     const data = JSON.parse(result.response.text());
+    if (typeof data?.error === 'string') {
+      throw makeGeminiGraphGuardrailRefusal(data.error);
+    }
 
     // Namespace all new node IDs to avoid collisions
     const prefix = nodeId.replace(/[^a-zA-Z0-9]/g, '_');
@@ -614,6 +713,9 @@ Return ONLY a JSON object: { "questions": [ { "question": "...", "options": ["..
 
     console.log(`[generateQuiz] "${nodeLabel}" ? ${Date.now() - t0}ms`);
     const data = JSON.parse(result.response.text());
+    if (typeof data?.error === 'string') {
+      throw makeGeminiGraphGuardrailRefusal(data.error);
+    }
     if (!Array.isArray(data.questions) || data.questions.length === 0) {
       throw new Error('Invalid quiz response from AI');
     }
