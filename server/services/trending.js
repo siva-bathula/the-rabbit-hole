@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { XMLParser } from 'fast-xml-parser';
+import { recordLlmCall } from '../lib/llmMetrics.js';
 
 const client = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY,
@@ -301,6 +302,7 @@ Return ONLY a JSON object: { "topics": [ { "label": "...", "headline": "..." }, 
     LLM_TIMEOUT_MS,
     'DeepSeek trending topics',
   );
+  recordLlmCall(1);
 
   const data = JSON.parse(response.choices[0].message.content);
   if (!Array.isArray(data.topics) || data.topics.length === 0) {

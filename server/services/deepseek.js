@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { isExploreDebug } from '../lib/exploreDebugLog.js';
+import { recordLlmCall } from '../lib/llmMetrics.js';
 
 const client = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY,
@@ -147,6 +148,7 @@ Rules: root id must be "root". Child ids node_1, node_2, ... Every child has an 
   });
 
   const result = await model.generateContent(`Topic: ${topic}`);
+  recordLlmCall(1);
   const text = result.response.text();
   const parsed = JSON.parse(text);
   if (typeof parsed?.error === 'string') throw new Error(parsed.error);
@@ -301,6 +303,7 @@ ${childCountLine}
 
   try {
     const result = await model.generateContent(userPrompt);
+    recordLlmCall(1);
     let text;
     try {
       text = result.response.text();
@@ -416,6 +419,7 @@ Rules:
     const result = await model.generateContent(
       `${userPrefix}Concept to expand: "${nodeLabel}"\nContext/parent topic: ${parentContext}\nAlready in graph (do not repeat): ${existingLabels.join(', ')}${sourceGroundingSuffix(groundingContext)}`
     );
+    recordLlmCall(1);
 
     console.log(`[expandNode] "${nodeLabel}" ? ${Date.now() - t0}ms`);
     const data = JSON.parse(result.response.text());
@@ -550,6 +554,7 @@ Be precise and specific. Every word should earn its place.`;
     response_format: { type: 'json_object' },
     temperature: explainTemp,
   });
+  recordLlmCall(1);
 
   return JSON.parse(response.choices[0].message.content);
 }
@@ -615,6 +620,7 @@ Be precise. Every sentence must earn its place. No filler.`;
     response_format: { type: 'json_object' },
     ...(useReasoner ? {} : { temperature: deepenTemp }),
   });
+  recordLlmCall(1);
 
   return JSON.parse(response.choices[0].message.content);
 }
@@ -664,6 +670,7 @@ Return ONLY a JSON object: { "reply": string, "offTopic": boolean }` +
     response_format: { type: 'json_object' },
     temperature: 0.55,
   });
+  recordLlmCall(1);
 
   const data = JSON.parse(response.choices[0].message.content);
   const reply = typeof data.reply === 'string' ? data.reply : '';
@@ -710,6 +717,7 @@ Return ONLY a JSON object: { "questions": [ { "question": "...", "options": ["..
     const result = await model.generateContent(
       `Topic: "${nodeLabel}"\n\n${contentBlock}\n\nGenerate 5 quiz questions on this.`
     );
+    recordLlmCall(1);
 
     console.log(`[generateQuiz] "${nodeLabel}" ? ${Date.now() - t0}ms`);
     const data = JSON.parse(result.response.text());

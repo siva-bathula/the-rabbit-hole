@@ -14,6 +14,7 @@ import shareRouter from './routes/share.js';
 import { followupPostHandler } from './routes/followup.js';
 import { startTrendingRefresh } from './services/trending.js';
 import { probeGeminiFlashGraphOnStartup } from './services/deepseek.js';
+import { startLlmMetrics } from './lib/llmMetrics.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -105,6 +106,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Rabbit Hole server running on http://0.0.0.0:${PORT}`);
   // Warm the cache immediately, then refresh every 30 minutes
   startTrendingRefresh();
+  startLlmMetrics();
   probeGeminiFlashGraphOnStartup().catch((e) =>
     console.error('[gemini] startup probe unexpected error:', e?.message || e),
   );
