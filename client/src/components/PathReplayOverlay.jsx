@@ -72,7 +72,7 @@ export default function PathReplayOverlay({
   onClose,
   /** Ref to Map of cache keys → { explanation, deeper } — same as NodeOverlay */
   explanationCache,
-  /** Which explain depth to prefer when reading cache (eli5 | normal | expert) */
+  /** Which explain depth to prefer when reading cache (eli5 | layman | normal | expert) */
   explainMode = 'normal',
   onStepIndexChange,
 }) {

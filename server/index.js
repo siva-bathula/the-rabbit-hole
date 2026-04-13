@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import exploreRouter from './routes/explore.js';
@@ -94,16 +95,27 @@ app.use((req, res, next) => {
   next();
 });
 
-// Serve the React build in production
-if (!IS_DEV) {
-  const staticPath = path.join(__dirname, 'public');
+// Serve the Vite build when present — even in dev, so http://localhost:4000/ works after `npm run build`.
+// (Without a build, only /api/* is available unless you use the Vite dev server on :3000.)
+const staticPath = path.join(__dirname, 'public');
+const publicIndex = path.join(staticPath, 'index.html');
+const hasSpaBuild = fs.existsSync(publicIndex);
+
+if (hasSpaBuild) {
   app.use(express.static(staticPath));
-  // SPA fallback — let React Router handle all non-API routes
-  app.get('*', (_, res) => res.sendFile(path.join(staticPath, 'index.html')));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(publicIndex);
+  });
+} else if (!IS_DEV) {
+  console.warn(
+    '[server] No React build at server/public/index.html — run `npm run build` from the repo root before production start.',
+  );
 }
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Rabbit Hole server running on http://0.0.0.0:${PORT}`);
+// Omit host so Node binds dual-stack where supported (fixes some Windows setups where "localhost" uses IPv6).
+app.listen(PORT, () => {
+  console.log(`Rabbit Hole server running on http://127.0.0.1:${PORT} (and your LAN interface)`);
   // Warm the cache immediately, then refresh every 30 minutes
   startTrendingRefresh();
   startLlmMetrics();

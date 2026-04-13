@@ -495,10 +495,12 @@ export async function explainNode(
       ? `Write for a very smart, curious 10-year-old. Use simple everyday words; no jargon unless you define it in one short plain sentence. Short, punchy sentences. Explain ideas directly—no extended "it's like..." stories or forced metaphors.`
       : mode === 'expert'
       ? `Write for a domain expert who already has strong foundational knowledge. Use precise technical terminology without simplification. Skip basic definitions and introductory context entirely. Focus on mechanisms, edge cases, performance characteristics, design trade-offs, and non-obvious nuances a senior practitioner would find genuinely insightful. Be direct and technically rigorous ? every sentence must add real value. Avoid filler metaphors; state mechanisms plainly.`
+      : mode === 'layman'
+      ? `Write for an adult who is curious but has no background in this field. Use plain, neutral English (no childish tone). Avoid unexplained jargon; when a technical term is necessary, define it in one short clause on first use. Spell out or expand acronyms on first use. Be respectful and direct—like a good documentary narrator, not a textbook.`
       : `Write in the voice of a warm, knowledgeable educator using natural Indian English: phrases like "basically", "actually", "you see", "only" for emphasis, and occasionally "isn't it?" or "right?". Be direct and conversational: put the idea in plain words first. Do not use extended analogies, whimsical comparisons, or stock "everyday life" metaphors (markets, vendors, traffic, etc.). If one concrete example truly helps, use at most one short factual line—not a story.`;
 
   const explainTemp =
-    mode === 'eli5' ? 0.68 : mode === 'expert' ? 0.72 : 0.42;
+    mode === 'eli5' ? 0.68 : mode === 'expert' ? 0.72 : mode === 'layman' ? 0.52 : 0.42;
 
   const systemPrompt = isRoot
     ? SAFETY_GUARDRAIL_BRIEF + `You are a clear, engaging educator. The user is exploring "${nodeLabel}" as their main topic.
@@ -576,16 +578,41 @@ export async function deepenNode(
       ? `Still writing for a curious 10-year-old: the hidden "why" and surprising facts, but only in simple words. No jargon. No extended "it's like..." metaphors or stories.`
       : mode === 'expert'
       ? `Write for a deep domain expert. Advanced implementation details, subtle failure modes, performance nuances, and expert-level gotchas only. Technical precision above all ? no hand-holding. Avoid filler metaphors.`
+      : mode === 'layman'
+      ? `Still writing for an adult non-specialist: go deeper, but every insight must stay readable. No jargon without a quick gloss; no condescension; no fairy-tale analogies.`
       : `Write in the voice of a warm, knowledgeable educator: direct, confident, conversational Indian English ("basically", "actually", "you see", "only", occasional "isn't it?" or "right?"). Go deeper in plain language; do not lean on extended analogies or whimsical comparisons.`;
 
   const deepenTemp =
-    mode === 'eli5' ? 0.72 : mode === 'expert' ? 0.78 : 0.5;
+    mode === 'eli5' ? 0.72 : mode === 'expert' ? 0.78 : mode === 'layman' ? 0.58 : 0.5;
 
   const codeField = needsCode
     ? `- "code": a DIFFERENT, more advanced code example string (not a repeat of any basics already shown). Demonstrate an edge case, optimisation, or real-world pattern. No markdown fences.`
     : '';
 
-  const systemPrompt = SAFETY_GUARDRAIL_BRIEF + `You are an expert educator giving the advanced masterclass on "${nodeLabel}" within the context of "${parentContext || nodeLabel}".
+  const systemPrompt =
+    mode === 'layman'
+      ? SAFETY_GUARDRAIL_BRIEF +
+        `You are a clear guide helping a smart adult with no specialist training understand "${nodeLabel}" more deeply within "${parentContext || nodeLabel}".
+${systemExtra}
+
+${toneInstruction}
+${DEEPEN_CLARITY_RULES}
+
+The user has already read this basic summary ? DO NOT repeat it:
+"${existingSummary}"
+
+Your job is to add real depth without a jargon wall. Focus on:
+1. Practical implications and "why this matters" in plain terms
+2. Non-obvious angles, common misconceptions, or surprises worth knowing
+3. How things actually work ? concrete cause-and-effect, with any technical term defined in-line when you must use it
+
+Return ONLY a JSON object with exactly these fields:
+- "advancedInsights": array of 3-5 strings, each substantive and specific ? valuable to an informed layperson; not dumbed-down trivia
+${codeField}
+
+Be precise. Every sentence must earn its place. No filler.`
+      : SAFETY_GUARDRAIL_BRIEF +
+        `You are an expert educator giving the advanced masterclass on "${nodeLabel}" within the context of "${parentContext || nodeLabel}".
 ${systemExtra}
 
 ${toneInstruction}

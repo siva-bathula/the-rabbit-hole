@@ -4,6 +4,7 @@ import { useSlowBurn } from '../hooks/useSlowBurn.js';
 
 const MODES = [
   { id: 'eli5', label: 'Simple' },
+  { id: 'layman', label: 'Layman' },
   { id: 'normal', label: 'Normal' },
   { id: 'expert', label: 'Expert' },
 ];

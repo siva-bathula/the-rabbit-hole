@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 
 const MODES = [
   { id: 'eli5', label: 'Simple' },
+  { id: 'layman', label: 'Layman' },
   { id: 'normal', label: 'Normal' },
   { id: 'expert', label: 'Expert' },
 ];
