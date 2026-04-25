@@ -1,14 +1,6 @@
-import OpenAI from 'openai';
 import { XMLParser } from 'fast-xml-parser';
 import { recordLlmCall } from '../lib/llmMetrics.js';
-import { getDeepseekV4FlashModel } from './deepseek.js';
-
-const client = new OpenAI({
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  baseURL: 'https://api.deepseek.com',
-});
-
-const MODEL = getDeepseekV4FlashModel();
+import { deepseekV4FlashChat } from './deepseek.js';
 
 // Indian news RSS feeds — tried in order, first to return ≥3 valid headlines wins
 const RSS_SOURCES = [
@@ -268,8 +260,7 @@ async function fetchHeadlines() {
 async function distilTopics(headlines, rssItems) {
   console.log('[trending] Distilling topics from headlines:', headlines);
   const response = await withTimeout(
-    client.chat.completions.create({
-      model: MODEL,
+    deepseekV4FlashChat({
       messages: [
         {
           role: 'system',

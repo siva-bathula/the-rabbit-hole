@@ -20,29 +20,55 @@ export function getDeepseekV4ProModel() {
   return (process.env.DEEPSEEK_V4_PRO_MODEL || DEFAULT_DEEPSEEK_V4_PRO).trim() || DEFAULT_DEEPSEEK_V4_PRO;
 }
 
+/** @see https://api-docs.deepseek.com/guides/thinking_mode — use with OpenAI-compatible chat.completions on DeepSeek. */
+export const deepseekThinkingChatConfig = Object.freeze({
+  reasoning_effort: 'high',
+  extra_body: { thinking: { type: 'enabled' } },
+});
+
+export function isDeepseekThinkingEnabled() {
+  const v = String(process.env.DEEPSEEK_THINKING_ENABLED ?? '1').trim();
+  if (!v) return true;
+  return !/^(0|false|no|off)$/i.test(v);
+}
+
+const SAMPLING_PARAMS_IGNORED_WITH_THINKING = ['temperature', 'top_p', 'presence_penalty', 'frequency_penalty'];
+
+function omitSamplingParamsForThinkingMode(params) {
+  const p = { ...params };
+  for (const k of SAMPLING_PARAMS_IGNORED_WITH_THINKING) {
+    if (k in p) delete p[k];
+  }
+  return p;
+}
+
 /**
- * Non-thinking: fast/cheap JSON and chat (replaces deepseek-chat).
+ * V4 Flash — optional thinking (see `DEEPSEEK_THINKING_ENABLED`, `deepseekThinkingChatConfig`).
  * @param {Omit<import('openai').OpenAI.ChatCompletionCreateParamsNonStreaming, 'model' | 'stream'>} params
  */
-async function deepseekV4FlashChat(params) {
+export async function deepseekV4FlashChat(params) {
+  const body = isDeepseekThinkingEnabled()
+    ? { ...omitSamplingParamsForThinkingMode(params), ...deepseekThinkingChatConfig }
+    : { ...params };
   return client.chat.completions.create({
-    ...params,
+    ...body,
     model: getDeepseekV4FlashModel(),
     stream: false,
   });
 }
 
 /**
- * V4 Pro + thinking (replaces deepseek-reasoner for expert deepen). Per DeepSeek, temperature has no effect in thinking mode.
+ * V4 Pro + same thinking config as flash (expert deepen). If thinking is off, pass `temperature` in params.
  * @param {Omit<import('openai').OpenAI.ChatCompletionCreateParamsNonStreaming, 'model' | 'stream' | 'temperature'>} params
  */
 async function deepseekV4ProThinkingChat(params) {
+  const body = isDeepseekThinkingEnabled()
+    ? { ...omitSamplingParamsForThinkingMode(params), ...deepseekThinkingChatConfig }
+    : { ...params };
   return client.chat.completions.create({
-    ...params,
+    ...body,
     model: getDeepseekV4ProModel(),
     stream: false,
-    reasoning_effort: 'high',
-    extra_body: { thinking: { type: 'enabled' } },
   });
 }
 const geminiClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -681,7 +707,9 @@ Be precise. Every sentence must earn its place. No filler.`;
     response_format: { type: 'json_object' },
   };
   const response = useProThinking
-    ? await deepseekV4ProThinkingChat(common)
+    ? await deepseekV4ProThinkingChat(
+        isDeepseekThinkingEnabled() ? common : { ...common, temperature: deepenTemp },
+      )
     : await deepseekV4FlashChat({ ...common, temperature: deepenTemp });
   recordLlmCall(1);
 
