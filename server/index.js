@@ -21,6 +21,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+// Help diagnose surprise exits (listen failures, stray async throws, etc.)
+process.on('unhandledRejection', (reason, p) => {
+  console.error('[process] unhandledRejection:', reason, p);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[process] uncaughtException:', err);
+});
+
 // Trust the first proxy hop (GCP Cloud Run / any load balancer)
 // so express-rate-limit can read the real client IP from X-Forwarded-For
 app.set('trust proxy', 1);
@@ -114,7 +122,7 @@ if (hasSpaBuild) {
 }
 
 // Omit host so Node binds dual-stack where supported (fixes some Windows setups where "localhost" uses IPv6).
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Rabbit Hole server running on http://127.0.0.1:${PORT} (and your LAN interface)`);
   // Warm the cache immediately, then refresh every 30 minutes
   startTrendingRefresh();
@@ -122,4 +130,15 @@ app.listen(PORT, () => {
   probeGeminiFlashGraphOnStartup().catch((e) =>
     console.error('[gemini] startup probe unexpected error:', e?.message || e),
   );
+});
+
+server.on('error', (err) => {
+  if (err?.code === 'EADDRINUSE') {
+    console.error(
+      `[server] Port ${PORT} is already in use — another process is bound there. Stop it or set PORT in .env.`,
+    );
+  } else {
+    console.error('[server] HTTP server error:', err);
+  }
+  process.exit(1);
 });

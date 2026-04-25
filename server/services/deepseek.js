@@ -8,8 +8,43 @@ const client = new OpenAI({
   baseURL: 'https://api.deepseek.com',
 });
 
-const DEEP_SEEK_CHAT_MODEL = 'deepseek-chat';
-const DEEP_SEEK_REASONER_MODEL = 'deepseek-reasoner';
+/** @see https://api-docs.deepseek.com/news/news260424 */
+const DEFAULT_DEEPSEEK_V4_FLASH = 'deepseek-v4-flash';
+const DEFAULT_DEEPSEEK_V4_PRO = 'deepseek-v4-pro';
+
+export function getDeepseekV4FlashModel() {
+  return (process.env.DEEPSEEK_V4_FLASH_MODEL || DEFAULT_DEEPSEEK_V4_FLASH).trim() || DEFAULT_DEEPSEEK_V4_FLASH;
+}
+
+export function getDeepseekV4ProModel() {
+  return (process.env.DEEPSEEK_V4_PRO_MODEL || DEFAULT_DEEPSEEK_V4_PRO).trim() || DEFAULT_DEEPSEEK_V4_PRO;
+}
+
+/**
+ * Non-thinking: fast/cheap JSON and chat (replaces deepseek-chat).
+ * @param {Omit<import('openai').OpenAI.ChatCompletionCreateParamsNonStreaming, 'model' | 'stream'>} params
+ */
+async function deepseekV4FlashChat(params) {
+  return client.chat.completions.create({
+    ...params,
+    model: getDeepseekV4FlashModel(),
+    stream: false,
+  });
+}
+
+/**
+ * V4 Pro + thinking (replaces deepseek-reasoner for expert deepen). Per DeepSeek, temperature has no effect in thinking mode.
+ * @param {Omit<import('openai').OpenAI.ChatCompletionCreateParamsNonStreaming, 'model' | 'stream' | 'temperature'>} params
+ */
+async function deepseekV4ProThinkingChat(params) {
+  return client.chat.completions.create({
+    ...params,
+    model: getDeepseekV4ProModel(),
+    stream: false,
+    reasoning_effort: 'high',
+    extra_body: { thinking: { type: 'enabled' } },
+  });
+}
 const geminiClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const GEMINI_MODEL_FLASH_LITE = 'gemini-2.5-flash-lite';
 const GEMINI_MODEL_FLASH = 'gemini-2.5-flash';
@@ -191,6 +226,7 @@ const EXPLAIN_CLARITY_RULES = `
 
 CLARITY AND HONESTY:
 - Each "details" bullet must add a distinct idea; do not restate the summary, do not echo the node title as empty filler, and do not pad with generic platitudes.
+- Length of the "details" array: for a narrow or very simple node, 3-4 bullets can be enough. When the topic is complex, multi-faceted, or clearly needs more coverage, use 6-8 bullets (never more than 8; never add filler just to hit a count).
 - Do not state specific years, statistics, or direct quotes unless you are confident they are accurate and widely accepted; when unsure, use phrasing like "typically", "often", "in many cases", or "one common pattern".
 - Avoid extended analogies, metaphors, and "it's like..." stories; they make the text heavy for beginners. Prefer short sentences and plain vocabulary. Define any necessary technical term in one plain line without a figurative comparison.
 - Do not reuse the same metaphor or catchphrase across summary, details, and keyTakeaway.`;
@@ -512,7 +548,7 @@ ${EXPLAIN_CLARITY_RULES}
 Return ONLY a valid JSON object with these fields (include every required key; omit optional learnMore if you cannot provide a verified https URL):
 - "title": the concept name (string)
 - "summary": 2-3 sentence overview of what this topic is and why it matters (string)
-- "details": array of 3-4 key insight strings that give a high-level map of the territory ? what are the most important things to understand about this topic? (array of strings)
+- "details": array of key insight strings (typically 4-6; use 6-8 when the topic is complex or genuinely needs that many distinct points; 3-4 is fine for simple/narrow nodes; max 8, no padding) that map what matters for this topic (array of strings)
 - "keyTakeaway": ONE punchy sentence ? the single most important thing to remember about this topic. Must be different from the summary. Think of it as the "if you forget everything else, remember this" line. (string)
 - "related": array of 3-5 subtopics or adjacent concepts worth exploring (array of strings)
 ${learnMoreField}
@@ -533,7 +569,7 @@ CRITICAL RULES:
 Return ONLY a valid JSON object with these fields (include every required key; omit optional learnMore if you cannot provide a verified https URL):
 - "title": the concept name (string)
 - "summary": 2-3 sentences explaining what "${nodeLabel}" specifically means or does in the context of "${parentContext}" (string)
-- "details": array of 3-4 key insight strings, each revealing something non-obvious or particularly important about "${nodeLabel}" as it applies to "${parentContext}" (array of strings)
+- "details": array of key insight strings, each non-obvious or important for "${nodeLabel}" in "${parentContext}" (typically 4-6; use 6-8 when the angle needs that many distinct points; 3-4 for simple cases; max 8, no padding) (array of strings)
 - "keyTakeaway": ONE punchy sentence ? the single most important thing to remember about "${nodeLabel}". Must be different from the summary. Think of it as the "if you forget everything else, remember this" line. (string)
 - "related": array of 3-5 related concept labels the user might want to explore next (array of strings)
 ${learnMoreField}
@@ -542,8 +578,7 @@ ${codeField}
 Be precise and specific. Every word should earn its place.`;
 
   const g = sourceGroundingSuffix(groundingContext);
-  const response = await client.chat.completions.create({
-    model: DEEP_SEEK_CHAT_MODEL,
+  const response = await deepseekV4FlashChat({
     messages: [
       { role: 'system', content: systemPrompt },
       {
@@ -633,10 +668,9 @@ ${codeField}
 Be precise. Every sentence must earn its place. No filler.`;
 
   const g = sourceGroundingSuffix(groundingContext);
-  // deepseek-reasoner only here (expert deepen); explainNode stays on chat for latency.
-  const useReasoner = mode === 'expert';
-  const response = await client.chat.completions.create({
-    model: useReasoner ? DEEP_SEEK_REASONER_MODEL : DEEP_SEEK_CHAT_MODEL,
+  // Expert: V4 Pro + thinking (replaces deepseek-reasoner); other modes use V4 Flash for latency/cost.
+  const useProThinking = mode === 'expert';
+  const common = {
     messages: [
       { role: 'system', content: systemPrompt },
       {
@@ -645,8 +679,10 @@ Be precise. Every sentence must earn its place. No filler.`;
       },
     ],
     response_format: { type: 'json_object' },
-    ...(useReasoner ? {} : { temperature: deepenTemp }),
-  });
+  };
+  const response = useProThinking
+    ? await deepseekV4ProThinkingChat(common)
+    : await deepseekV4FlashChat({ ...common, temperature: deepenTemp });
   recordLlmCall(1);
 
   return JSON.parse(response.choices[0].message.content);
@@ -691,8 +727,7 @@ Return ONLY a JSON object: { "reply": string, "offTopic": boolean }` +
     })),
   ];
 
-  const response = await client.chat.completions.create({
-    model: DEEP_SEEK_CHAT_MODEL,
+  const response = await deepseekV4FlashChat({
     messages: apiMessages,
     response_format: { type: 'json_object' },
     temperature: 0.55,

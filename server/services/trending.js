@@ -1,13 +1,14 @@
 import OpenAI from 'openai';
 import { XMLParser } from 'fast-xml-parser';
 import { recordLlmCall } from '../lib/llmMetrics.js';
+import { getDeepseekV4FlashModel } from './deepseek.js';
 
 const client = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY,
   baseURL: 'https://api.deepseek.com',
 });
 
-const MODEL = 'deepseek-chat';
+const MODEL = getDeepseekV4FlashModel();
 
 // Indian news RSS feeds — tried in order, first to return ≥3 valid headlines wins
 const RSS_SOURCES = [
