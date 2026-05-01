@@ -1,6 +1,13 @@
 import { Router } from 'express';
-import { generateNodes } from '../services/deepseek.js';
+import { generateNodes, generateComparisonAlignment } from '../services/deepseek.js';
 import { isExploreDebug } from '../lib/exploreDebugLog.js';
+import {
+  tryParseComparisonSubjects,
+  remapSubjectGraphForMerge,
+  mergeComparisonGraphs,
+  sanitizeMergedComparisonGraph,
+  labelsPerHubChildren,
+} from '../lib/comparisonExplore.js';
 import {
   fetchArticlePlainText,
   mergeArticleIntoGrounding,
@@ -85,6 +92,66 @@ router.post('/', async (req, res) => {
       if (fetched.ok && fetched.text) {
         effectiveGrounding = mergeArticleIntoGrounding(base, fetched.text);
       }
+    }
+
+    const comparisonSubjects =
+      !isNewsAnchoredTopic(topicTrim) ? tryParseComparisonSubjects(topicTrim) : null;
+
+    if (comparisonSubjects && comparisonSubjects.length >= 2) {
+      const graphs = await Promise.all(
+        comparisonSubjects.map((subject, i) =>
+          generateNodes(subject.trim(), {
+            groundingContext: effectiveGrounding,
+            comparisonContext: {
+              focusSubject: subject.trim(),
+              peerSubjects: comparisonSubjects
+                .filter((_, j) => j !== i)
+                .map((s) => s.trim()),
+              fullComparisonTopic: topicTrim,
+            },
+          }),
+        ),
+      );
+
+      for (const raw of graphs) {
+        if (!raw.nodes || !raw.edges || typeof raw.error === 'string') {
+          if (isExploreDebug()) {
+            console.error('[explore-debug] /api/explore comparison: invalid subgraph', {
+              topicPreview: topicTrim.slice(0, 120),
+              errorField: typeof raw?.error === 'string' ? raw.error : undefined,
+              nodes: Array.isArray(raw?.nodes) ? `array(len=${raw.nodes.length})` : raw?.nodes,
+              edges: Array.isArray(raw?.edges) ? `array(len=${raw.edges.length})` : raw?.edges,
+            });
+          }
+          return res.status(500).json({ error: 'Invalid response from AI' });
+        }
+      }
+
+      const remapped = graphs.map((raw, i) =>
+        remapSubjectGraphForMerge(sanitizeGraph(raw), i, comparisonSubjects[i]),
+      );
+      const merged = sanitizeMergedComparisonGraph(
+        mergeComparisonGraphs(remapped, topicTrim),
+      );
+
+      let alignment = null;
+      try {
+        const lp = labelsPerHubChildren(merged, comparisonSubjects.length);
+        alignment = await generateComparisonAlignment(comparisonSubjects, lp);
+      } catch (alignErr) {
+        console.error('[explore] comparison alignment:', alignErr.message);
+      }
+
+      return res.json({
+        nodes: merged.nodes,
+        edges: merged.edges,
+        groundingContext: effectiveGrounding,
+        comparison: {
+          mode: 'comparison',
+          subjects: comparisonSubjects,
+          ...(alignment?.rows?.length ? { alignment } : {}),
+        },
+      });
     }
 
     const raw = await generateNodes(topicTrim, {

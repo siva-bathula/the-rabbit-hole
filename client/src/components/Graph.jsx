@@ -8,6 +8,7 @@ import {
   useImperativeHandle,
 } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
+import { graphPrimaryRootId, isPrimaryGraphRoot } from '../lib/graphRoot.js';
 
 const NODE_COLORS = {
   root: '#F59E0B',
@@ -56,7 +57,7 @@ function getReplayDisplayLabel(label) {
 }
 
 function getNodeRadius(node) {
-  if (node.id === 'root') return 10;
+  if (isPrimaryGraphRoot(node.id)) return 10;
   // Deeper nodes are subtly smaller to convey hierarchy
   const depth = node.depth ?? 1;
   return Math.max(4, 6 - (depth - 1) * 1.5);
@@ -101,17 +102,18 @@ const MOBILE_FOCUS_MAX_NEIGHBORS = 3;
 function getInitialMobileFocusNodeIds(graphData) {
   const { nodes, links } = graphData;
   if (!nodes?.length) return [];
-  const hasRoot = nodes.some((n) => n.id === 'root');
-  if (!hasRoot) return nodes.slice(0, 4).map((n) => n.id);
+  const primaryRoot = graphPrimaryRootId(nodes);
+  const hasPrimary = nodes.some((n) => n.id === primaryRoot);
+  if (!hasPrimary) return nodes.slice(0, 4).map((n) => n.id);
   const neighbors = [];
   for (const l of links || []) {
     const s = typeof l.source === 'object' ? l.source.id : l.source;
     const t = typeof l.target === 'object' ? l.target.id : l.target;
-    if (s === 'root' && t !== 'root') neighbors.push(t);
-    if (t === 'root' && s !== 'root') neighbors.push(s);
+    if (s === primaryRoot && t !== primaryRoot) neighbors.push(t);
+    if (t === primaryRoot && s !== primaryRoot) neighbors.push(s);
   }
   const unique = [...new Set(neighbors)].slice(0, MOBILE_FOCUS_MAX_NEIGHBORS);
-  return ['root', ...unique];
+  return [primaryRoot, ...unique];
 }
 
 function getNodeColor(node, selectedNode, expandedNodes, replay) {
@@ -127,7 +129,7 @@ function getNodeColor(node, selectedNode, expandedNodes, replay) {
     return REPLAY_TRAIL;
   }
   if (selectedNode?.id === node.id) return NODE_COLORS.selected;
-  if (node.id === 'root') return NODE_COLORS.root;
+  if (isPrimaryGraphRoot(node.id)) return NODE_COLORS.root;
   if (expandedNodes.has(node.id)) return NODE_COLORS.expanded;
   return GROUP_COLORS[node.group] || NODE_COLORS.default;
 }
@@ -277,8 +279,9 @@ const Graph = forwardRef(function Graph(
       return;
     }
 
-    // Pin root at canvas origin
-    const rootNode = graphData.nodes.find((n) => n.id === 'root');
+    // Pin primary root at canvas origin
+    const primaryRoot = graphPrimaryRootId(graphData.nodes);
+    const rootNode = graphData.nodes.find((n) => n.id === primaryRoot);
     if (rootNode) {
       rootNode.fx = 0;
       rootNode.fy = 0;
@@ -286,35 +289,80 @@ const Graph = forwardRef(function Graph(
       rootNode.y = 0;
     }
 
-    // Pin root children on an evenly-spaced ring — first load only.
-    // On expansions the root children are already pinned, so skip.
+    // Pin primary root children — comparison meta_root gets hubs + per-hub leaves
     if (!seededRef.current) {
       const rootChildIds = new Set();
       graphData.links.forEach((l) => {
         const srcId = typeof l.source === 'object' ? l.source.id : l.source;
         const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-        if (srcId === 'root') rootChildIds.add(tgtId);
-        if (tgtId === 'root') rootChildIds.add(srcId);
+        if (srcId === primaryRoot) rootChildIds.add(tgtId);
+        if (tgtId === primaryRoot) rootChildIds.add(srcId);
       });
 
       const rootChildren = graphData.nodes.filter((n) => rootChildIds.has(n.id));
-      const nKids = rootChildren.length;
-      let RING_R = Math.min(320, Math.max(190, 150 + nKids * 14));
-      if (width < 640) {
-        const scale = Math.min(1.35, Math.max(1, 420 / Math.max(width, 280)));
-        RING_R = Math.min(360, RING_R * scale);
+
+      if (primaryRoot === 'meta_root' && rootChildren.length >= 2) {
+        const HUB_RING_R = Math.min(340, Math.max(200, 160 + rootChildren.length * 28));
+        rootChildren.forEach((hub, i) => {
+          const angle = (i / rootChildren.length) * 2 * Math.PI - Math.PI / 2;
+          const px = HUB_RING_R * Math.cos(angle);
+          const py = HUB_RING_R * Math.sin(angle);
+          hub.fx = px;
+          hub.fy = py;
+          hub.x = px;
+          hub.y = py;
+          hub.vx = 0;
+          hub.vy = 0;
+        });
+        const CHILD_R = Math.min(155, Math.max(115, 95 + rootChildren.length * 6));
+        rootChildren.forEach((hub) => {
+          const hubKids = [];
+          graphData.links.forEach((l) => {
+            const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+            const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+            if (srcId === hub.id && tgtId !== primaryRoot) hubKids.push(tgtId);
+            if (tgtId === hub.id && srcId !== primaryRoot) hubKids.push(srcId);
+          });
+          const kids = graphData.nodes.filter(
+            (n) => hubKids.includes(n.id) && n.id !== primaryRoot,
+          );
+          const hx = hub.fx ?? 0;
+          const hy = hub.fy ?? 0;
+          const outward = Math.abs(hx) < 1 && Math.abs(hy) < 1 ? 0 : Math.atan2(hy, hx);
+          const ARC = Math.min(1.35, Math.max(0.55, 1.05 - kids.length * 0.06)) * Math.PI;
+          kids.forEach((kid, i) => {
+            const n = kids.length;
+            const t = n > 1 ? i / (n - 1) : 0.5;
+            const ang = outward + (-ARC / 2 + t * ARC);
+            const cx = hx + Math.cos(ang) * CHILD_R;
+            const cy = hy + Math.sin(ang) * CHILD_R;
+            kid.fx = cx;
+            kid.fy = cy;
+            kid.x = cx;
+            kid.y = cy;
+            kid.vx = 0;
+            kid.vy = 0;
+          });
+        });
+      } else {
+        const nKids = rootChildren.length;
+        let RING_R = Math.min(320, Math.max(190, 150 + nKids * 14));
+        if (width < 640) {
+          const scale = Math.min(1.35, Math.max(1, 420 / Math.max(width, 280)));
+          RING_R = Math.min(360, RING_R * scale);
+        }
+        rootChildren.forEach((node, i) => {
+          const angle = (i / rootChildren.length) * 2 * Math.PI - Math.PI / 2;
+          const px = RING_R * Math.cos(angle);
+          const py = RING_R * Math.sin(angle);
+          node.fx = px;
+          node.fy = py;
+          node.x = px;
+          node.y = py;
+          node.vx = 0;
+          node.vy = 0;
+        });
       }
-      rootChildren.forEach((node, i) => {
-        const angle = (i / rootChildren.length) * 2 * Math.PI - Math.PI / 2;
-        const px = RING_R * Math.cos(angle);
-        const py = RING_R * Math.sin(angle);
-        node.fx = px;
-        node.fy = py;
-        node.x = px;
-        node.y = py;
-        node.vx = 0;
-        node.vy = 0;
-      });
 
       seededRef.current = true;
     }
@@ -407,7 +455,7 @@ const Graph = forwardRef(function Graph(
       const isReplayCurrent = replayVisual?.currentId === node.id;
 
       // Outer glow for expanded or selected nodes
-      if (!replayVisual && (expandedNodes.has(node.id) || isSelected || node.id === 'root')) {
+      if (!replayVisual && (expandedNodes.has(node.id) || isSelected || isPrimaryGraphRoot(node.id))) {
         const glowRadius = r * 2.4;
         const gradient = ctx.createRadialGradient(
           node.x, node.y, r * 0.5,
@@ -415,7 +463,7 @@ const Graph = forwardRef(function Graph(
         );
         const glowColor = isSelected
           ? 'rgba(168,85,247,'
-          : node.id === 'root'
+          : isPrimaryGraphRoot(node.id)
           ? 'rgba(245,158,11,'
           : 'rgba(34,211,238,';
         gradient.addColorStop(0, `${glowColor}0.25)`);
@@ -475,7 +523,7 @@ const Graph = forwardRef(function Graph(
       }
 
       // Unexpanded leaf indicator: small "+" mark
-      const isLeaf = !expandedNodes.has(node.id) && node.id !== 'root';
+      const isLeaf = !expandedNodes.has(node.id) && !isPrimaryGraphRoot(node.id);
       if (isLeaf) {
         const plusSize = r * 0.45;
         ctx.strokeStyle = 'rgba(255,255,255,0.5)';

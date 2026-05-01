@@ -12,6 +12,7 @@ import deepenRouter from './routes/deepen.js';
 import trendingRouter from './routes/trending.js';
 import quizRouter from './routes/quiz.js';
 import shareRouter from './routes/share.js';
+import compareRouter from './routes/compare.js';
 import { followupPostHandler } from './routes/followup.js';
 import { startTrendingRefresh } from './services/trending.js';
 import { probeGeminiFlashGraphOnStartup } from './services/deepseek.js';
@@ -90,6 +91,7 @@ app.use('/api/deepen', deepenRouter);
 app.use('/api/trending', trendingRouter);
 app.use('/api/quiz', quizRouter);
 app.use('/api/share', shareRouter);
+app.use('/api/compare', compareRouter);
 app.post('/api/followup', followupPostHandler);
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
 

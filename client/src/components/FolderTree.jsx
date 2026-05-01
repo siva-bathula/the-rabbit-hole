@@ -1,3 +1,5 @@
+import { graphPrimaryRootId } from '../lib/graphRoot.js';
+
 function buildTree(nodes, links, parentId, depth = 0) {
   const result = [];
   for (const link of links) {
@@ -73,9 +75,10 @@ function TreeNode({ item, currentNodeId, visitedIds, onNodeClick }) {
   );
 }
 
-export default function FolderTree({ graphData, currentNodeId, visitedIds, rootLabel, onNodeClick }) {
+export default function FolderTree({ graphData, currentNodeId, visitedIds, rootLabel, graphRootId: graphRootIdProp, onNodeClick }) {
   const { nodes, links } = graphData;
-  const rootNode = nodes.find((n) => n.id === 'root');
+  const graphRootId = graphRootIdProp ?? graphPrimaryRootId(nodes);
+  const rootNode = nodes.find((n) => n.id === graphRootId);
 
   if (!rootNode || nodes.length === 0) {
     return (
@@ -85,7 +88,7 @@ export default function FolderTree({ graphData, currentNodeId, visitedIds, rootL
     );
   }
 
-  const tree = buildTree(nodes, links, 'root');
+  const tree = buildTree(nodes, links, graphRootId);
 
   return (
     <div className="h-full overflow-y-auto py-4 pl-4 pr-4 max-sm:pr-14">

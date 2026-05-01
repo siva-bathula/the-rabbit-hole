@@ -363,6 +363,21 @@ ${childCountLine}
     : `Topic: ${topic}`;
   userPrompt += sourceGroundingSuffix(newsGrounding);
 
+  const cc = options.comparisonContext;
+  if (cc?.focusSubject && !newsAnchored) {
+    const peers = Array.isArray(cc.peerSubjects)
+      ? cc.peerSubjects.filter(Boolean).join(', ')
+      : '';
+    userPrompt += `
+
+COMPARISON SUBGRAPH (one side of a multi-subject comparison):
+- Build this graph ONLY for: "${cc.focusSubject}".
+- Other subjects (disambiguation only; do not centre the graph on them): ${peers || '(none)'}.
+- Root label must be "${cc.focusSubject}" (concise).
+- Child nodes: angles that help compare "${cc.focusSubject}" to the others — contrasts, strengths, limits, typical uses — every node must belong to "${cc.focusSubject}" only.
+`;
+  }
+
   try {
     const result = await model.generateContent(userPrompt);
     recordLlmCall(1);
@@ -823,4 +838,117 @@ Return ONLY a JSON object: { "questions": [ { "question": "...", "options": ["..
     markGeminiGraphFailed(err);
     throw err;
   }
+}
+
+/**
+ * Align comparison dimensions across subjects using each subject's hub child labels.
+ * @param {string[]} subjects
+ * @param {string[][]} labelsPerSubject
+ */
+export async function generateComparisonAlignment(subjects, labelsPerSubject) {
+  const systemInstruction =
+    SAFETY_GUARDRAIL_BRIEF +
+    `You align topics for a learner comparing multiple subjects.
+
+Given subject names and subtopic labels (generated separately per subject), output comparison ROWS.
+Each row is one comparable DIMENSION with one picked label per subject.
+
+Rules:
+- picks[i] MUST be exactly one string copied from labelsPerSubject[i] when any label fits the dimension; if multiple fit, pick the best; if none fit perfectly, still choose the single closest label FROM THAT LIST only (never invent a new label).
+- picks.length must equal subjects.length and preserve subject order.
+- 5-10 rows; skip redundant or overlapping dimensions.
+- dimension: 2-5 neutral words.
+
+Return ONLY JSON: { "rows": [ { "dimension": string, "picks": string[] } ] }`;
+
+  const model = geminiClient.getGenerativeModel({
+    model: currentGeminiGraphModel(),
+    systemInstruction,
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: 0.22,
+    },
+  });
+
+  try {
+    const result = await model.generateContent(
+      `Subjects and their subgraph labels (arrays align by index):\n${JSON.stringify({
+        subjects,
+        labelsPerSubject,
+      })}`,
+    );
+    recordLlmCall(1);
+    const data = JSON.parse(result.response.text());
+    if (typeof data?.error === 'string') {
+      throw makeGeminiGraphGuardrailRefusal(data.error);
+    }
+    const rows = Array.isArray(data?.rows) ? data.rows : [];
+    const cleaned = rows
+      .filter((r) => r && typeof r.dimension === 'string' && Array.isArray(r.picks))
+      .map((r) => ({
+        dimension: r.dimension.trim(),
+        picks: r.picks.map((p) => String(p || '').trim()).slice(0, subjects.length),
+      }))
+      .filter((r) => r.dimension && r.picks.length === subjects.length);
+    markGeminiGraphSucceeded();
+    return { rows: cleaned };
+  } catch (err) {
+    markGeminiGraphFailed(err);
+    throw err;
+  }
+}
+
+/**
+ * Side-by-side comparison copy for one dimension.
+ */
+export async function compareAcrossSubjects({
+  subjects,
+  dimensionLabel,
+  labelsPerSubject = [],
+  sessionTopic = '',
+  groundingContext = '',
+}) {
+  const systemPrompt =
+    SAFETY_GUARDRAIL_BRIEF +
+    `You compare multiple subjects on ONE dimension for a learner.
+
+Return ONLY valid JSON:
+{
+  "summary": "one tight sentence contrasting all subjects on this dimension",
+  "columns": [ { "subject": string, "bullets": string[] } ]
+}
+
+Rules:
+- columns.length must equal subjects.length in the same order.
+- 3-5 bullets per column; concrete and comparative.
+- Do not invent exact statistics, quotes, or citations.`;
+
+  const payload =
+    JSON.stringify({
+      subjects,
+      dimension: dimensionLabel,
+      nodeLabelsPerSubject: labelsPerSubject,
+      fullQuestion: sessionTopic,
+    }) + sourceGroundingSuffix(groundingContext);
+
+  const response = await deepseekV4FlashChat({
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: payload },
+    ],
+    response_format: { type: 'json_object' },
+    temperature: 0.35,
+  });
+  recordLlmCall(1);
+
+  const data = JSON.parse(response.choices[0].message.content);
+  const summary = typeof data.summary === 'string' ? data.summary : '';
+  let columns = Array.isArray(data.columns) ? data.columns : [];
+  if (columns.length !== subjects.length) {
+    columns = subjects.map((subject, i) => ({
+      subject,
+      bullets: Array.isArray(columns[i]?.bullets) ? columns[i].bullets : [],
+    }));
+  }
+  return { summary, columns };
 }

@@ -41,6 +41,8 @@ router.post('/', async (req, res) => {
     expandedNodes,
     parentLabelOf,
     originalPosition,
+    comparisonSubjects,
+    comparisonAlignment,
   } = req.body;
 
   if (!graphData?.nodes?.length) {
@@ -72,6 +74,11 @@ router.post('/', async (req, res) => {
       // Store Maps as plain objects — Firestore forbids nested arrays
       parentLabelOf: Object.fromEntries(parentLabelOf || []),
       originalPosition: Object.fromEntries(originalPosition || []),
+      comparisonSubjects: Array.isArray(comparisonSubjects) ? comparisonSubjects : null,
+      comparisonAlignment:
+        comparisonAlignment && typeof comparisonAlignment === 'object'
+          ? comparisonAlignment
+          : null,
       createdAt: Timestamp.now(),
     });
 
@@ -110,6 +117,11 @@ router.get('/:id', async (req, res) => {
       // Convert plain objects back to [key, value] pairs for new Map() on the client
       parentLabelOf: Object.entries(data.parentLabelOf || {}),
       originalPosition: Object.entries(data.originalPosition || {}),
+      comparisonSubjects: Array.isArray(data.comparisonSubjects) ? data.comparisonSubjects : null,
+      comparisonAlignment:
+        data.comparisonAlignment && typeof data.comparisonAlignment === 'object'
+          ? data.comparisonAlignment
+          : null,
     });
   } catch (err) {
     console.error('[share GET] error:', err.message);

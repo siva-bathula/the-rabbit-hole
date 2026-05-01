@@ -1,8 +1,8 @@
 import { useReducer, useEffect, useRef, useCallback } from 'react';
 
-function findPathToNode(nodeId, links) {
-  const parent = new Map([['root', null]]);
-  const queue = ['root'];
+function findPathToNode(nodeId, links, graphRootId = 'root') {
+  const parent = new Map([[graphRootId, null]]);
+  const queue = [graphRootId];
   while (queue.length > 0) {
     const curr = queue.shift();
     if (curr === nodeId) {
@@ -126,6 +126,7 @@ export function useSlowBurn({
   expand,
   expandingNodeId,
   startWithRoot = false,
+  graphRootId = 'root',
   /** Distinguish saved session vs live vs share so same node-count switches re-init slow burn */
   graphSessionKey = 'default',
   /** Unique node ids from persisted exploration path — seed FolderTree "read" ticks on load */
@@ -145,6 +146,9 @@ export function useSlowBurn({
 
   const seedVisitedIdsRef = useRef(seedVisitedIds);
   seedVisitedIdsRef.current = seedVisitedIds;
+
+  const graphRootIdRef = useRef(graphRootId);
+  graphRootIdRef.current = graphRootId;
 
   // nodeId currently waiting for expand() to complete
   const pendingExpandRef = useRef(null);
@@ -188,11 +192,10 @@ export function useSlowBurn({
     // After sessionKeyChanged, stateRef may still see pre-RESET slowQueue until next paint — use sessionKeyChanged to force init.
     const needInitQueue = sessionKeyChanged || stateRef.current.slowQueue.length === 0;
     if (needInitQueue) {
-      const rootChildren = getChildIds('root', links);
+      const rootId = graphRootIdRef.current || 'root';
+      const rootChildren = getChildIds(rootId, links);
       if (rootChildren.length > 0) {
-        const queue = startWithRootRef.current
-          ? ['root', ...rootChildren]
-          : rootChildren;
+        const queue = startWithRootRef.current ? [rootId, ...rootChildren] : rootChildren;
         const graphNodeIds = nodes.map((n) => n.id);
         dispatch({
           type: 'INIT_QUEUE',
@@ -204,7 +207,7 @@ export function useSlowBurn({
         });
       }
     }
-  }, [graphData.nodes.length, graphSessionKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [graphData.nodes.length, graphSessionKey, graphRootId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Derived current node
   const currentNodeId = state.slowQueue[state.slowIndex] ?? null;
@@ -243,9 +246,11 @@ export function useSlowBurn({
   const isExpanding = !!pendingExpandRef.current || !!expandingNodeId;
 
   // "Go Deeper": node not yet expanded — will call API
+  const rootIdForNav = graphRootIdRef.current || 'root';
+
   const canGoDeeper =
     currentNode !== null &&
-    currentNode.id !== 'root' &&
+    currentNode.id !== rootIdForNav &&
     !currentNode.followUp &&
     !expandedNodes.has(currentNode.id) &&
     !isExpanding;
@@ -257,7 +262,7 @@ export function useSlowBurn({
       : [];
   const canEnterChildren =
     currentNode !== null &&
-    currentNode.id !== 'root' &&
+    currentNode.id !== rootIdForNav &&
     childIdsForCurrent.length > 0 &&
     (expandedNodes.has(currentNode.id) || currentNode.followUp);
 
@@ -293,7 +298,8 @@ export function useSlowBurn({
 
   const jumpToNode = useCallback((nodeId) => {
     const { links } = graphDataRef.current;
-    const path = findPathToNode(nodeId, links);
+    const rid = graphRootIdRef.current || 'root';
+    const path = findPathToNode(nodeId, links, rid);
     if (!path || path.length < 2) return;
     const newLevelStack = [];
     for (let i = 1; i < path.length - 1; i++) {

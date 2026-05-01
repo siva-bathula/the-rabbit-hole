@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import FolderTree from './FolderTree.jsx';
 import { useSlowBurn } from '../hooks/useSlowBurn.js';
+import { graphPrimaryRootId } from '../lib/graphRoot.js';
 
 const MODES = [
   { id: 'eli5', label: 'Simple' },
@@ -480,6 +481,11 @@ export default function SlowBurnView({
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 640);
 
+  const graphRootId = useMemo(
+    () => graphPrimaryRootId(graphData.nodes),
+    [graphData.nodes],
+  );
+
   const {
     currentNode,
     parentNode,
@@ -503,6 +509,7 @@ export default function SlowBurnView({
     expandedNodes,
     expand,
     expandingNodeId,
+    graphRootId,
     startWithRoot,
     graphSessionKey,
     seedVisitedIds,
@@ -544,6 +551,7 @@ export default function SlowBurnView({
           currentNodeId={currentNode?.id ?? null}
           visitedIds={visitedIds}
           rootLabel={rootLabel}
+          graphRootId={graphRootId}
           onNodeClick={jumpToNode}
         />
       </div>
@@ -606,7 +614,7 @@ export default function SlowBurnView({
           }}
         >
           {/* Ask follow-up — shown for all non-root nodes */}
-          {onAskFollowUp && currentNode && currentNode.id !== 'root' && !currentNode.followUp && (
+          {onAskFollowUp && currentNode && currentNode.id !== graphRootId && !currentNode.followUp && (
             <button
               onClick={() => onAskFollowUp(currentNode)}
               className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl

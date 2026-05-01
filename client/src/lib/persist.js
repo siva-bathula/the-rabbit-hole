@@ -75,6 +75,8 @@ function serializeSnap(snap) {
     originalPosition: [...snap.originalPosition.entries()],
     explanationCache: [...snap.explanationCache.entries()],
     expandDataCache: [...snap.expandDataCache.entries()],
+    comparisonSubjects: snap.comparisonSubjects ?? null,
+    comparisonAlignment: snap.comparisonAlignment ?? null,
   };
 }
 
@@ -97,6 +99,8 @@ function deserializeSnap(raw) {
     originalPosition: new Map(raw.originalPosition),
     explanationCache: new Map(raw.explanationCache),
     expandDataCache: new Map(raw.expandDataCache),
+    comparisonSubjects: raw.comparisonSubjects ?? null,
+    comparisonAlignment: raw.comparisonAlignment ?? null,
   };
 }
 
@@ -279,6 +283,8 @@ export function serializeShareSnap(snap, topic) {
     expandedNodes: [...s.expandedNodes],
     parentLabelOf: [...s.parentLabelOf.entries()],
     originalPosition: [...s.originalPosition.entries()],
+    comparisonSubjects: s.comparisonSubjects ?? null,
+    comparisonAlignment: s.comparisonAlignment ?? null,
   };
 }
 
@@ -293,6 +299,8 @@ export function deserializeShareSnap(raw) {
     originalPosition: new Map(raw.originalPosition),
     explanationCache: new Map(),
     expandDataCache: new Map(),
+    comparisonSubjects: raw.comparisonSubjects ?? null,
+    comparisonAlignment: raw.comparisonAlignment ?? null,
   };
 }
 

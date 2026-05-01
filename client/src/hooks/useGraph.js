@@ -1,4 +1,34 @@
 import { useState, useCallback, useRef } from 'react';
+import { graphPrimaryRootId } from '../lib/graphRoot.js';
+
+function buildOutgoingAdj(links) {
+  const m = new Map();
+  for (const l of links) {
+    const s = typeof l.source === 'object' ? l.source.id : l.source;
+    const t = typeof l.target === 'object' ? l.target.id : l.target;
+    if (!m.has(s)) m.set(s, []);
+    m.get(s).push(t);
+  }
+  return m;
+}
+
+/** BFS depth along directed edges from the graph primary root. */
+function depthsFromPrimaryRoot(primaryRoot, links) {
+  const adj = buildOutgoingAdj(links);
+  const depth = new Map([[primaryRoot, 0]]);
+  const q = [primaryRoot];
+  while (q.length > 0) {
+    const u = q.shift();
+    const du = depth.get(u);
+    for (const v of adj.get(u) || []) {
+      if (!depth.has(v)) {
+        depth.set(v, du + 1);
+        q.push(v);
+      }
+    }
+  }
+  return depth;
+}
 
 /**
  * BFS from `nodeId` through `links` to collect all descendant node IDs.
@@ -29,6 +59,8 @@ export function useGraph() {
   const [isExploring, setIsExploring] = useState(false);
   const [error, setError] = useState(null);
   const [rootLabel, setRootLabel] = useState('');
+  const [comparisonSubjects, setComparisonSubjects] = useState(null);
+  const [comparisonAlignment, setComparisonAlignment] = useState(null);
 
   const nodesRef = useRef([]);
   const linksRef = useRef([]);
@@ -68,6 +100,8 @@ export function useGraph() {
     originalPositionRef.current = new Map();
     explanationCacheRef.current = new Map();
     expandDataCacheRef.current = new Map();
+    setComparisonSubjects(null);
+    setComparisonAlignment(null);
 
     try {
       const res = await fetch('/api/explore', {
@@ -87,23 +121,45 @@ export function useGraph() {
         groundingContextRef.current = data.groundingContext;
       }
 
-      const nodes = (data.nodes || []).map((n) => ({
-        ...n,
-        depth: n.id === 'root' ? 0 : 1,
-      }));
+      if (data.comparison?.subjects?.length >= 2) {
+        setComparisonSubjects(data.comparison.subjects);
+        setComparisonAlignment(
+          data.comparison.alignment?.rows?.length ? data.comparison.alignment : null,
+        );
+      } else {
+        setComparisonSubjects(null);
+        setComparisonAlignment(null);
+      }
+
       const links = (data.edges || []).map((e) => ({
         source: e.source,
         target: e.target,
       }));
 
-      const rootNode = nodes.find((n) => n.id === 'root');
+      const primaryRoot = graphPrimaryRootId(data.nodes || []);
+      const depthMap = depthsFromPrimaryRoot(primaryRoot, links);
+
+      const nodes = (data.nodes || []).map((n) => ({
+        ...n,
+        depth: depthMap.has(n.id) ? depthMap.get(n.id) : 1,
+      }));
+
+      const rootNode = nodes.find((n) => n.id === primaryRoot);
       const label = rootNode?.label || topic;
       rootLabelRef.current = label;
       setRootLabel(label);
 
-      // Record root as parent of all initial nodes
+      const parentIdOf = new Map();
+      for (const l of links) {
+        const s = typeof l.source === 'object' ? l.source.id : l.source;
+        const t = typeof l.target === 'object' ? l.target.id : l.target;
+        parentIdOf.set(t, s);
+      }
       nodes.forEach((n) => {
-        if (n.id !== 'root') parentLabelOfRef.current.set(n.id, label);
+        if (n.id === primaryRoot) return;
+        const pid = parentIdOf.get(n.id);
+        const pnode = nodes.find((x) => x.id === pid);
+        parentLabelOfRef.current.set(n.id, pnode?.label || label);
       });
 
       nodesRef.current = nodes;
@@ -155,8 +211,9 @@ export function useGraph() {
           expandDataCacheRef.current.set(node.id, data);
         }
 
-        // Compute radial direction from root to this node
-        const rootNode = nodesRef.current.find((n) => n.id === 'root');
+        // Compute radial direction from primary root to this node
+        const primaryRoot = graphPrimaryRootId(nodesRef.current);
+        const rootNode = nodesRef.current.find((n) => n.id === primaryRoot);
         const rootX = rootNode?.fx ?? rootNode?.x ?? 0;
         const rootY = rootNode?.fy ?? rootNode?.y ?? 0;
         const nodeX = node.fx ?? node.x ?? 0;
@@ -264,7 +321,9 @@ export function useGraph() {
     originalPosition: new Map(originalPositionRef.current),
     explanationCache: new Map(explanationCacheRef.current),
     expandDataCache: new Map(expandDataCacheRef.current),
-  }), [expandedNodes]);
+    comparisonSubjects,
+    comparisonAlignment,
+  }), [expandedNodes, comparisonSubjects, comparisonAlignment]);
 
   const restore = useCallback((snap) => {
     nodesRef.current = snap.graphData.nodes;
@@ -276,6 +335,8 @@ export function useGraph() {
     originalPositionRef.current = snap.originalPosition;
     explanationCacheRef.current = snap.explanationCache;
     expandDataCacheRef.current = snap.expandDataCache;
+    setComparisonSubjects(snap.comparisonSubjects ?? null);
+    setComparisonAlignment(snap.comparisonAlignment ?? null);
     setGraphData(snap.graphData);
     setExpandedNodes(snap.expandedNodes);
     setRootLabel(snap.rootLabel);
@@ -300,6 +361,8 @@ export function useGraph() {
     originalPositionRef.current = new Map();
     explanationCacheRef.current = new Map();
     expandDataCacheRef.current = new Map();
+    setComparisonSubjects(null);
+    setComparisonAlignment(null);
   }, []);
 
   /** Append a follow-up chat turn as a graph node under parentId (linear thread). */
@@ -375,5 +438,7 @@ export function useGraph() {
     addFollowUpNode,
     getParentLabelForNode,
     explanationCache: explanationCacheRef,
+    comparisonSubjects,
+    comparisonAlignment,
   };
 }

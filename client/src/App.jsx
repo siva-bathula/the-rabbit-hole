@@ -9,6 +9,7 @@ import FollowUpChatPanel from './components/FollowUpChatPanel.jsx';
 import { useGraph } from './hooks/useGraph.js';
 import { useExplorationPath } from './hooks/useExplorationPath.js';
 import QuizOverlay from './components/QuizOverlay.jsx';
+import CompareMatrixOverlay from './components/CompareMatrixOverlay.jsx';
 import {
   saveLive, loadLive, clearLive,
   saveSessions, loadSessions,
@@ -20,14 +21,16 @@ import {
   isStorageQuotaError,
 } from './lib/persist.js';
 import { isNewsAnchoredSessionTopic } from './lib/newsTopic.js';
+import { graphPrimaryRootId } from './lib/graphRoot.js';
 
 /** Same step as PathReplayOverlay — graph view zoom buttons */
 const GRAPH_VIEW_ZOOM_IN = 1.32;
 const GRAPH_VIEW_ZOOM_OUT = 1 / GRAPH_VIEW_ZOOM_IN;
 
 function buildSession(topic, mode, snap, shareId = null, explorationPathIds = []) {
+  const primary = graphPrimaryRootId(snap.graphData.nodes);
   const previewNodes = snap.graphData.nodes
-    .filter((n) => n.id !== 'root')
+    .filter((n) => n.id !== primary)
     .slice(0, 3)
     .map((n) => n.label);
   const now = Date.now();
@@ -51,6 +54,8 @@ function buildSession(topic, mode, snap, shareId = null, explorationPathIds = []
     explanationCache: snap.explanationCache,
     expandDataCache: snap.expandDataCache,
     groundingContext: snap.groundingContext || '',
+    comparisonSubjects: snap.comparisonSubjects ?? null,
+    comparisonAlignment: snap.comparisonAlignment ?? null,
   };
 }
 
@@ -140,6 +145,8 @@ export default function App() {
   const [isSharing, setIsSharing] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
 
+  const [comparePanelOpen, setComparePanelOpen] = useState(false);
+
   const saveToHistory = useCallback((topic) => {
     const normalised = topic.trim();
     if (!normalised) return;
@@ -182,7 +189,13 @@ export default function App() {
     restore,
     explanationCache,
     addFollowUpNode,
+    comparisonSubjects,
+    comparisonAlignment,
   } = useGraph();
+
+  useEffect(() => {
+    if (!comparisonSubjects?.length) setComparePanelOpen(false);
+  }, [comparisonSubjects]);
 
   const { pathIds, appendStep, resetPath, replacePath, canReplay } = useExplorationPath();
 
@@ -356,6 +369,8 @@ export default function App() {
         explanationCache: target.explanationCache,
         expandDataCache: target.expandDataCache,
         groundingContext: target.groundingContext || '',
+        comparisonSubjects: target.comparisonSubjects ?? null,
+        comparisonAlignment: target.comparisonAlignment ?? null,
       });
       replacePath(
         filterPathToGraph(target.explorationPathIds, target.graphData.nodes),
@@ -852,6 +867,21 @@ export default function App() {
                 <span className="hidden sm:inline">{shareCopied ? 'Copied!' : 'Share'}</span>
               </button>
 
+              {comparisonSubjects?.length >= 2 && (
+                <button
+                  type="button"
+                  onClick={() => setComparePanelOpen(true)}
+                  disabled={isExploring || graphData.nodes.length === 0}
+                  title="Side-by-side comparison across aligned topics"
+                  className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-sm font-medium transition-all border
+                    border-violet-500/35 text-violet-200/95 hover:bg-violet-500/10
+                    disabled:opacity-35 disabled:cursor-not-allowed"
+                  style={{ background: 'rgba(139,92,246,0.08)' }}
+                >
+                  <span className="text-xs sm:text-sm font-semibold">Compare</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={openPathReplay}
@@ -948,6 +978,15 @@ export default function App() {
           )}
         </>
       )}
+
+      <CompareMatrixOverlay
+        open={comparePanelOpen && phase === 'graph'}
+        onClose={() => setComparePanelOpen(false)}
+        subjects={comparisonSubjects || []}
+        alignment={comparisonAlignment}
+        sessionTopic={currentTopic}
+        groundingContext={groundingContext}
+      />
 
       {/* Sessions drawer — available from any phase */}
       <SessionsDrawer
