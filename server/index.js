@@ -17,6 +17,7 @@ import { followupPostHandler } from './routes/followup.js';
 import { startTrendingRefresh } from './services/trending.js';
 import { probeGeminiFlashGraphOnStartup } from './services/deepseek.js';
 import { startLlmMetrics } from './lib/llmMetrics.js';
+import { FirestoreRateLimitStore } from './lib/rateLimitFirestoreStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -73,12 +74,19 @@ app.use(
   })
 );
 
+const useFirestoreRateLimit =
+  process.env.USE_FIRESTORE_RATE_LIMIT === '1' ||
+  (process.env.NODE_ENV === 'production' && process.env.USE_FIRESTORE_RATE_LIMIT !== '0');
+
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 20,
+  max: 10,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests — please wait a minute before trying again.' },
+  ...(useFirestoreRateLimit
+    ? { store: new FirestoreRateLimitStore(), passOnStoreError: true }
+    : {}),
 });
 
 app.use(express.json());

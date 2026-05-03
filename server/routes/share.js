@@ -1,20 +1,8 @@
 import { Router } from 'express';
-import { Firestore, Timestamp } from '@google-cloud/firestore';
+import { Timestamp } from '@google-cloud/firestore';
+import { getSharedFirestore } from '../lib/firestoreClient.js';
 
 const router = Router();
-
-// Initialise Firestore once — uses ADC on Cloud Run, GOOGLE_APPLICATION_CREDENTIALS locally
-let db;
-function getDb() {
-  if (!db) {
-    db = new Firestore({
-      projectId: process.env.GCLOUD_PROJECT || undefined,
-      databaseId: process.env.FIRESTORE_DATABASE_ID || '(default)',
-    });
-    console.log('[share] Firestore init — project:', process.env.GCLOUD_PROJECT || '(auto)', 'db:', process.env.FIRESTORE_DATABASE_ID || '(default)');
-  }
-  return db;
-}
 
 const COLLECTION = 'shared_graphs';
 
@@ -54,7 +42,7 @@ router.post('/', async (req, res) => {
   }
 
   try {
-    const firestore = getDb();
+    const firestore = getSharedFirestore();
 
     let id = existingId;
     if (!id) {
@@ -100,7 +88,7 @@ router.get('/:id', async (req, res) => {
   }
 
   try {
-    const firestore = getDb();
+    const firestore = getSharedFirestore();
     const doc = await firestore.collection(COLLECTION).doc(id).get();
 
     if (!doc.exists) {

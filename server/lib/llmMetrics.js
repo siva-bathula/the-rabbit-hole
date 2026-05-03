@@ -1,4 +1,5 @@
-import { Firestore, FieldValue, Timestamp } from '@google-cloud/firestore';
+import { FieldValue, Timestamp } from '@google-cloud/firestore';
+import { getSharedFirestore } from './firestoreClient.js';
 
 const COLLECTION = 'app_metrics';
 const DOC_ID = 'llm_calls';
@@ -18,17 +19,6 @@ const FLUSH_MS = Math.max(
   Number(process.env.LLM_METRICS_FLUSH_MS || 60_000) || 60_000,
 );
 
-let db;
-function getDb() {
-  if (!db) {
-    db = new Firestore({
-      projectId: process.env.GCLOUD_PROJECT || undefined,
-      databaseId: process.env.FIRESTORE_DATABASE_ID || '(default)',
-    });
-  }
-  return db;
-}
-
 let pendingDelta = 0;
 let started = false;
 
@@ -45,7 +35,7 @@ export async function flushLlmMetricsNow() {
   if (n <= 0) return;
 
   try {
-    const firestore = getDb();
+    const firestore = getSharedFirestore();
     await firestore.collection(COLLECTION).doc(DOC_ID).set(
       {
         total: FieldValue.increment(n),
