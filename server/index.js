@@ -78,6 +78,13 @@ const useFirestoreRateLimit =
   process.env.USE_FIRESTORE_RATE_LIMIT === '1' ||
   (process.env.NODE_ENV === 'production' && process.env.USE_FIRESTORE_RATE_LIMIT !== '0');
 
+console.log(
+  '[rate-limit] NODE_ENV=%s USE_FIRESTORE_RATE_LIMIT=%s → store=%s',
+  process.env.NODE_ENV || '(unset)',
+  process.env.USE_FIRESTORE_RATE_LIMIT ?? '(unset)',
+  useFirestoreRateLimit ? 'firestore (collection api_rate_limits)' : 'memory',
+);
+
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
