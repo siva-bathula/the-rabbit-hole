@@ -34,7 +34,8 @@ process.on('uncaughtException', (err) => {
 // Trust the first proxy hop (GCP Cloud Run / any load balancer)
 // so express-rate-limit can read the real client IP from X-Forwarded-For
 app.set('trust proxy', 1);
-const IS_DEV = process.env.NODE_ENV !== 'production';
+const nodeEnv = String(process.env.NODE_ENV ?? '').trim();
+const IS_DEV = nodeEnv !== 'production';
 
 // ── Security headers (every response) ────────────────────────────────────────
 // Prevent the app from being embedded in any iframe (clickjacking protection).
@@ -74,14 +75,15 @@ app.use(
   })
 );
 
+const useFirestoreRateLimitFlag = String(process.env.USE_FIRESTORE_RATE_LIMIT ?? '').trim();
 const useFirestoreRateLimit =
-  process.env.USE_FIRESTORE_RATE_LIMIT === '1' ||
-  (process.env.NODE_ENV === 'production' && process.env.USE_FIRESTORE_RATE_LIMIT !== '0');
+  useFirestoreRateLimitFlag === '1' ||
+  (nodeEnv === 'production' && useFirestoreRateLimitFlag !== '0');
 
 console.log(
   '[rate-limit] NODE_ENV=%s USE_FIRESTORE_RATE_LIMIT=%s → store=%s',
-  process.env.NODE_ENV || '(unset)',
-  process.env.USE_FIRESTORE_RATE_LIMIT ?? '(unset)',
+  nodeEnv || '(unset)',
+  useFirestoreRateLimitFlag || '(unset)',
   useFirestoreRateLimit ? 'firestore (collection api_rate_limits)' : 'memory',
 );
 
@@ -97,7 +99,11 @@ const apiLimiter = rateLimit({
 });
 
 app.use(express.json());
-app.use('/api', apiLimiter);
+// Apply limiter to every /api request (explicit guard — same as mount, avoids edge cases with sub-mount paths).
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api')) return next();
+  return apiLimiter(req, res, next);
+});
 
 app.use('/api/explore', exploreRouter);
 app.use('/api/expand', expandRouter);
