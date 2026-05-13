@@ -14,6 +14,19 @@ copy .env.example .env
 # Edit .env and add your DEEPSEEK_API_KEY
 ```
 
+### Abuse protection (production)
+
+LLM routes (`/api/explore`, `/api/expand`, `/api/explain`, `/api/deepen`, `/api/quiz`, `/api/compare`, `/api/followup`) expect **Cloudflare Turnstile**:
+
+- **Server:** set `TURNSTILE_SECRET_KEY` in `server/.env`. Without it in production, those routes return `503` until configured (or set `DISABLE_TURNSTILE=1` only if you intentionally accept open endpoints).
+- **Client:** set `VITE_TURNSTILE_SITE_KEY` in `client/.env` before `npm run build` so the SPA can mint tokens. Local dev can omit both keys; verification is skipped when no secret is set in development.
+
+All **`POST /api/*`** requests in production must send an **`Origin`** header that matches `ALLOWED_ORIGINS` (comma-separated) or `http(s)://localhost:*`. That blocks naive curl/Postman; Turnstile blocks most scripted abuse that spoofs `Origin`.
+
+**Rate limits:** `/api/*` stays at **10 requests per minute per IP** (shared Firestore counter in production by default). Tune in `server/index.js` if needed after Turnstile is live.
+
+**Edge:** Putting the site behind **Cloudflare** (Bot Fight Mode, rate rules) adds another layer on top of application checks.
+
 ### Development (two terminals)
 ```bash
 # Terminal 1 — API server on :4000

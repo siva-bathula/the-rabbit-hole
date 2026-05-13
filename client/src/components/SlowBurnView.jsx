@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import FolderTree from './FolderTree.jsx';
 import { useSlowBurn } from '../hooks/useSlowBurn.js';
 import { graphPrimaryRootId } from '../lib/graphRoot.js';
+import { withTurnstilePayload } from '../lib/turnstile.js';
 
 const MODES = [
   { id: 'eli5', label: 'Simple' },
@@ -46,20 +47,22 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
     setError(null);
     setIsLoading(true);
 
-    fetch('/api/explain', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        nodeLabel: node.label,
-        parentContext: parentContext || node.label,
-        rootTopic: rootLabel || '',
-        sessionTopic: sessionTopic || '',
-        groundingContext: groundingContext || '',
-        mode,
-      }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
+    (async () => {
+      try {
+        const body = await withTurnstilePayload({
+          nodeLabel: node.label,
+          parentContext: parentContext || node.label,
+          rootTopic: rootLabel || '',
+          sessionTopic: sessionTopic || '',
+          groundingContext: groundingContext || '',
+          mode,
+        });
+        const r = await fetch('/api/explain', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await r.json();
         if (!cancelled) {
           if (data.error) setError(data.error);
           else {
@@ -67,13 +70,12 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
             cache?.current?.set(cacheKey, { explanation: data, deeper: null });
           }
         }
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) setError('Failed to load explanation.');
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setIsLoading(false);
-      });
+      }
+    })();
 
     return () => {
       cancelled = true;
@@ -86,18 +88,19 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
     setDeeperError(null);
     const cacheKey = modeCacheKey(node.id, mode);
     try {
+      const body = await withTurnstilePayload({
+        nodeLabel: node.label,
+        parentContext: parentContext || node.label,
+        rootTopic: rootLabel || '',
+        sessionTopic: sessionTopic || '',
+        groundingContext: groundingContext || '',
+        existingSummary: explanation.summary || '',
+        mode,
+      });
       const res = await fetch('/api/deepen', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nodeLabel: node.label,
-          parentContext: parentContext || node.label,
-          rootTopic: rootLabel || '',
-          sessionTopic: sessionTopic || '',
-          groundingContext: groundingContext || '',
-          existingSummary: explanation.summary || '',
-          mode,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (data.error) {

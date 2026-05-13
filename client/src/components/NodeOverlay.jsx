@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { isPrimaryGraphRoot } from '../lib/graphRoot.js';
+import { withTurnstilePayload } from '../lib/turnstile.js';
 
 const MODES = [
   { id: 'eli5', label: 'Simple' },
@@ -60,20 +61,22 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
     setError(null);
     setIsLoading(true);
 
-    fetch('/api/explain', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        nodeLabel: node.label,
-        parentContext: rootTopic || node.label,
-        rootTopic: rootTopic || '',
-        sessionTopic: sessionTopic || '',
-        groundingContext: groundingContext || '',
-        mode: explainMode,
-      }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
+    (async () => {
+      try {
+        const body = await withTurnstilePayload({
+          nodeLabel: node.label,
+          parentContext: rootTopic || node.label,
+          rootTopic: rootTopic || '',
+          sessionTopic: sessionTopic || '',
+          groundingContext: groundingContext || '',
+          mode: explainMode,
+        });
+        const r = await fetch('/api/explain', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await r.json();
         if (!cancelled) {
           if (data.error) setError(data.error);
           else {
@@ -82,13 +85,12 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
             onExplanationCached?.();
           }
         }
-      })
-      .catch(() => {
+      } catch {
         if (!cancelled) setError('Failed to load explanation.');
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setIsLoading(false);
-      });
+      }
+    })();
 
     return () => { cancelled = true; };
   }, [node?.id, node?.followUp, explainMode, rootTopic, sessionTopic, groundingContext]);
@@ -99,18 +101,19 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
     setDeeperError(null);
     const cacheKey = modeCacheKey(node.id, explainMode);
     try {
+      const body = await withTurnstilePayload({
+        nodeLabel: node.label,
+        parentContext: rootTopic || node.label,
+        rootTopic: rootTopic || '',
+        sessionTopic: sessionTopic || '',
+        groundingContext: groundingContext || '',
+        existingSummary: explanation.summary || '',
+        mode: explainMode,
+      });
       const res = await fetch('/api/deepen', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nodeLabel: node.label,
-          parentContext: rootTopic || node.label,
-          rootTopic: rootTopic || '',
-          sessionTopic: sessionTopic || '',
-          groundingContext: groundingContext || '',
-          existingSummary: explanation.summary || '',
-          mode: explainMode,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (data.error) {

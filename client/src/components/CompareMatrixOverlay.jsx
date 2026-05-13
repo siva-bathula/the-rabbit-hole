@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { withTurnstilePayload } from '../lib/turnstile.js';
 
 export default function CompareMatrixOverlay({
   open,
@@ -18,16 +19,17 @@ export default function CompareMatrixOverlay({
       setLoadingDimension(row.dimension);
       setDetail(null);
       try {
+        const body = await withTurnstilePayload({
+          subjects,
+          dimensionLabel: row.dimension,
+          labelsPerSubject: row.picks || [],
+          sessionTopic: sessionTopic || '',
+          groundingContext: groundingContext || '',
+        });
         const res = await fetch('/api/compare', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            subjects,
-            dimensionLabel: row.dimension,
-            labelsPerSubject: row.picks || [],
-            sessionTopic: sessionTopic || '',
-            groundingContext: groundingContext || '',
-          }),
+          body: JSON.stringify(body),
         });
         const data = await res.json();
         if (!res.ok || data.error) throw new Error(data.error || 'Request failed');

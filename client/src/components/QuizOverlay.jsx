@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { withTurnstilePayload } from '../lib/turnstile.js';
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D'];
 
@@ -248,13 +249,15 @@ export default function QuizOverlay({ node, explanation, rootTopic, onClose }) {
       return;
     }
 
-    fetch('/api/quiz', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nodeLabel: node.label, explanation }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
+    (async () => {
+      try {
+        const body = await withTurnstilePayload({ nodeLabel: node.label, explanation });
+        const r = await fetch('/api/quiz', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await r.json();
         if (data.error) throw new Error(data.error);
         const qs = data.questions;
         setQuestions(qs);
@@ -262,12 +265,12 @@ export default function QuizOverlay({ node, explanation, rootTopic, onClose }) {
         setCurrentIndex(0);
         saveQuizState(rootTopic, node.id, { questions: qs, userAnswers: [], currentIndex: 0, completed: false });
         setPhase('question');
-      })
-      .catch((err) => {
+      } catch (err) {
         setError(err.message || 'Failed to generate quiz');
         setPhase('error');
-      });
-  }, [node.id, rootTopic]);
+      }
+    })();
+  }, [node.id, node.label, rootTopic, explanation]);
 
   const handleAnswer = useCallback((answerIndex) => {
     const newAnswers = [...userAnswers, answerIndex];
@@ -300,13 +303,15 @@ export default function QuizOverlay({ node, explanation, rootTopic, onClose }) {
     setCurrentIndex(0);
     setPhase('loading');
 
-    fetch('/api/quiz', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nodeLabel: node.label, explanation }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
+    (async () => {
+      try {
+        const body = await withTurnstilePayload({ nodeLabel: node.label, explanation });
+        const r = await fetch('/api/quiz', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await r.json();
         if (data.error) throw new Error(data.error);
         const qs = data.questions;
         setQuestions(qs);
@@ -314,11 +319,11 @@ export default function QuizOverlay({ node, explanation, rootTopic, onClose }) {
         setCurrentIndex(0);
         saveQuizState(rootTopic, node.id, { questions: qs, userAnswers: [], currentIndex: 0, completed: false });
         setPhase('question');
-      })
-      .catch((err) => {
+      } catch (err) {
         setError(err.message || 'Failed to generate quiz');
         setPhase('error');
-      });
+      }
+    })();
   }, [node.id, node.label, rootTopic, explanation]);
 
   return (

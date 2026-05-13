@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { graphPrimaryRootId } from '../lib/graphRoot.js';
+import { withTurnstilePayload } from '../lib/turnstile.js';
 
 function buildOutgoingAdj(links) {
   const m = new Map();
@@ -104,15 +105,16 @@ export function useGraph() {
     setComparisonAlignment(null);
 
     try {
+      const body = await withTurnstilePayload({
+        topic,
+        groundingContext,
+        articleUrl,
+        fromTrending,
+      });
       const res = await fetch('/api/explore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic,
-          groundingContext,
-          articleUrl,
-          fromTrending,
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error((await res.json()).error || 'Server error');
       const data = await res.json();
@@ -194,17 +196,18 @@ export function useGraph() {
         let data = expandDataCacheRef.current.get(node.id);
         if (!data) {
           const existingLabels = nodesRef.current.map((n) => n.label);
+          const expandBody = await withTurnstilePayload({
+            nodeId: node.id,
+            nodeLabel: node.label,
+            parentContext: nodeParentLabel,
+            existingLabels,
+            sessionTopic: sessionTopicRef.current || '',
+            groundingContext: groundingContextRef.current || '',
+          });
           const res = await fetch('/api/expand', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              nodeId: node.id,
-              nodeLabel: node.label,
-              parentContext: nodeParentLabel,
-              existingLabels,
-              sessionTopic: sessionTopicRef.current || '',
-              groundingContext: groundingContextRef.current || '',
-            }),
+            body: JSON.stringify(expandBody),
           });
           if (!res.ok) throw new Error((await res.json()).error || 'Server error');
           data = await res.json();

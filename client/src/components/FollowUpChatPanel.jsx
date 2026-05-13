@@ -5,6 +5,7 @@ import {
   getFollowUpChainLeafId,
   collectFollowUpMessages,
 } from '../lib/followUpGraph.js';
+import { withTurnstilePayload } from '../lib/turnstile.js';
 
 export default function FollowUpChatPanel({
   triggerNode,
@@ -48,17 +49,18 @@ export default function FollowUpChatPanel({
       const apiMessages = [...prior, { role: 'user', content: q }];
 
       try {
+        const body = await withTurnstilePayload({
+          branchNodeLabel: anchorLabel,
+          anchorParentContext,
+          rootTopic: rootLabel || '',
+          sessionTopic: sessionTopic || '',
+          groundingContext: groundingContext || '',
+          messages: apiMessages,
+        });
         const res = await fetch('/api/followup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            branchNodeLabel: anchorLabel,
-            anchorParentContext,
-            rootTopic: rootLabel || '',
-            sessionTopic: sessionTopic || '',
-            groundingContext: groundingContext || '',
-            messages: apiMessages,
-          }),
+          body: JSON.stringify(body),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Request failed');

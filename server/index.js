@@ -18,6 +18,7 @@ import { startTrendingRefresh } from './services/trending.js';
 import { probeGeminiFlashGraphOnStartup } from './services/deepseek.js';
 import { startLlmMetrics } from './lib/llmMetrics.js';
 import { FirestoreRateLimitStore } from './lib/rateLimitFirestoreStore.js';
+import { createRequireTurnstile } from './middleware/requireTurnstile.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -59,14 +60,19 @@ const allowedOrigins = IS_DEV
         .filter(Boolean)
     );
 
+/** Used by CORS and production POST /api origin enforcement. */
+function isAllowedBrowserOrigin(origin) {
+  if (!origin || typeof origin !== 'string') return false;
+  if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return true;
+  return allowedOrigins.has(origin);
+}
+
 app.use(
   cors({
     origin: (origin, cb) => {
       // No Origin header → same-origin browser nav or non-browser client → allow.
       if (!origin) return cb(null, true);
-      // Localhost is always safe — external clients cannot spoof it.
-      if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return cb(null, true);
-      if (allowedOrigins.has(origin)) return cb(null, true);
+      if (isAllowedBrowserOrigin(origin)) return cb(null, true);
       // Return a plain false (not an Error) so cors sends a 403 quietly
       // without bubbling an unhandled error through Express.
       cb(null, false);
@@ -98,22 +104,58 @@ const apiLimiter = rateLimit({
     : {}),
 });
 
+const disableTurnstile = String(process.env.DISABLE_TURNSTILE ?? '').trim() === '1';
+const turnstileSecret = String(process.env.TURNSTILE_SECRET_KEY ?? '').trim();
+
+/** Skip verification only when explicitly disabled or in local dev without a secret. */
+let requireTurnstile;
+if (disableTurnstile) {
+  console.log('[turnstile] DISABLE_TURNSTILE=1 — AI route verification skipped');
+  requireTurnstile = (_req, _res, next) => next();
+} else if (!turnstileSecret) {
+  if (IS_DEV) {
+    console.log('[turnstile] No TURNSTILE_SECRET_KEY — verification skipped (development)');
+    requireTurnstile = (_req, _res, next) => next();
+  } else {
+    console.error(
+      '[turnstile] Production requires TURNSTILE_SECRET_KEY or DISABLE_TURNSTILE=1 — AI routes will fail until configured.',
+    );
+    requireTurnstile = (_req, res) =>
+      res.status(503).json({ error: 'Server misconfiguration: Turnstile secret is not set.' });
+  }
+} else {
+  requireTurnstile = createRequireTurnstile({ secretKey: turnstileSecret });
+}
+
 app.use(express.json());
+
+// Production: POST /api must declare an allowed Origin (blocks naive curl/Postman without Origin).
+// Does not stop clients that forge Origin; pairs with Turnstile on LLM routes.
+app.use((req, res, next) => {
+  if (IS_DEV) return next();
+  if (req.method !== 'POST' || !req.path.startsWith('/api')) return next();
+  const origin = req.get('Origin');
+  if (!isAllowedBrowserOrigin(origin)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  next();
+});
+
 // Apply limiter to every /api request (explicit guard — same as mount, avoids edge cases with sub-mount paths).
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api')) return next();
   return apiLimiter(req, res, next);
 });
 
-app.use('/api/explore', exploreRouter);
-app.use('/api/expand', expandRouter);
-app.use('/api/explain', explainRouter);
-app.use('/api/deepen', deepenRouter);
+app.use('/api/explore', requireTurnstile, exploreRouter);
+app.use('/api/expand', requireTurnstile, expandRouter);
+app.use('/api/explain', requireTurnstile, explainRouter);
+app.use('/api/deepen', requireTurnstile, deepenRouter);
 app.use('/api/trending', trendingRouter);
-app.use('/api/quiz', quizRouter);
+app.use('/api/quiz', requireTurnstile, quizRouter);
 app.use('/api/share', shareRouter);
-app.use('/api/compare', compareRouter);
-app.post('/api/followup', followupPostHandler);
+app.use('/api/compare', requireTurnstile, compareRouter);
+app.post('/api/followup', requireTurnstile, followupPostHandler);
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
 
 // Block well-known vulnerability scanner paths before they hit the SPA fallback.
