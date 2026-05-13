@@ -13,20 +13,14 @@ function loadTurnstileScript() {
     scriptPromise = new Promise((resolve, reject) => {
       const s = document.createElement('script');
       s.src = SCRIPT_SRC;
-      s.async = true;
+      // Dynamically inserted scripts default to async=true; Turnstile rejects that combination with turnstile.ready(). We use onload instead of ready(), but keep async=false to match explicit-render expectations.
+      s.async = false;
       s.onload = resolve;
       s.onerror = () => reject(new Error('Failed to load Turnstile'));
       document.head.appendChild(s);
     });
   }
   return scriptPromise;
-}
-
-function turnstileReady() {
-  return new Promise((resolve) => {
-    if (window.turnstile?.ready) window.turnstile.ready(resolve);
-    else resolve();
-  });
 }
 
 function ensureHostEl() {
@@ -58,17 +52,23 @@ let chain = Promise.resolve();
 
 function runTurnstileOnce(siteKey) {
   return loadTurnstileScript()
-    .then(() => turnstileReady())
     .then(
       () =>
         new Promise((resolve, reject) => {
           pending = { resolve, reject };
           const el = ensureHostEl();
 
-          const onErr = () => {
+          const onErr = (code) => {
             const p = pending;
             pending = null;
-            p?.reject(new Error('Turnstile verification failed'));
+            if (code != null) console.warn('[turnstile] widget error', code);
+            const local =
+              typeof window !== 'undefined' &&
+              /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
+            const hint = local
+              ? ' For local testing: add `localhost` (and/or `127.0.0.1`) to your Turnstile widget hostnames in Cloudflare, or use Cloudflare’s dummy site + secret keys from their Turnstile testing docs.'
+              : '';
+            p?.reject(new Error(`Turnstile verification failed.${hint}`));
           };
 
           try {

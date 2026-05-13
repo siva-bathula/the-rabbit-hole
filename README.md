@@ -20,6 +20,7 @@ LLM routes (`/api/explore`, `/api/expand`, `/api/explain`, `/api/deepen`, `/api/
 
 - **Server:** set `TURNSTILE_SECRET_KEY` in `server/.env`. Without it in production, those routes return `503` until configured (or set `DISABLE_TURNSTILE=1` only if you intentionally accept open endpoints).
 - **Client:** set `VITE_TURNSTILE_SITE_KEY` in `client/.env` before `npm run build` so the SPA can mint tokens. Local dev can omit both keys; verification is skipped when no secret is set in development.
+- **Localhost + Turnstile:** If you set `VITE_TURNSTILE_SITE_KEY` locally but the widget shows **“Turnstile verification failed”**, your Turnstile widget in Cloudflare must allow **`localhost`** / **`127.0.0.1`** (widget hostname settings), or use Cloudflare’s **[official dummy keys](https://developers.cloudflare.com/turnstile/troubleshooting/testing/)** (`1x00000000000000000000AA` + matching secret) while developing.
 
 All **`POST /api/*`** requests in production must send an **`Origin`** header that matches `ALLOWED_ORIGINS` (comma-separated) or `http(s)://localhost:*`. That blocks naive curl/Postman; Turnstile blocks most scripted abuse that spoofs `Origin`.
 
