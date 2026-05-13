@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { withTurnstilePayload } from '../lib/turnstile.js';
+import { withTurnstilePayload, fetchWithTurnstile } from '../lib/turnstile.js';
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D'];
 
@@ -252,7 +252,7 @@ export default function QuizOverlay({ node, explanation, rootTopic, onClose }) {
     (async () => {
       try {
         const body = await withTurnstilePayload({ nodeLabel: node.label, explanation });
-        const r = await fetch('/api/quiz', {
+        const r = await fetchWithTurnstile('/api/quiz', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
@@ -306,7 +306,7 @@ export default function QuizOverlay({ node, explanation, rootTopic, onClose }) {
     (async () => {
       try {
         const body = await withTurnstilePayload({ nodeLabel: node.label, explanation });
-        const r = await fetch('/api/quiz', {
+        const r = await fetchWithTurnstile('/api/quiz', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),

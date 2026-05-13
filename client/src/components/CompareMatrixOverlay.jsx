@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { withTurnstilePayload } from '../lib/turnstile.js';
+import { withTurnstilePayload, fetchWithTurnstile } from '../lib/turnstile.js';
 
 export default function CompareMatrixOverlay({
   open,
@@ -26,7 +26,7 @@ export default function CompareMatrixOverlay({
           sessionTopic: sessionTopic || '',
           groundingContext: groundingContext || '',
         });
-        const res = await fetch('/api/compare', {
+        const res = await fetchWithTurnstile('/api/compare', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),

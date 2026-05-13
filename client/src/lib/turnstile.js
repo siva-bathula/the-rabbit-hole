@@ -1,5 +1,7 @@
 /** Cloudflare Turnstile (invisible) — serialized token minting for AI POST bodies. */
 
+import { captureRhTurnstileSessionFromResponse, ensureRhTurnstileSession } from './turnstileSession.js';
+
 const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
 
 let scriptPromise = null;
@@ -29,18 +31,28 @@ function ensureHostEl() {
     el = document.createElement('div');
     el.id = 'rh-turnstile-host';
     el.setAttribute('aria-hidden', 'true');
-    Object.assign(el.style, {
-      position: 'fixed',
-      width: '0',
-      height: '0',
-      overflow: 'hidden',
-      opacity: '0',
-      pointerEvents: 'none',
-      left: '-9999px',
-    });
     document.body.appendChild(el);
   }
+  // Always refresh styles (older builds used 0×0 which breaks the iframe).
+  Object.assign(el.style, {
+    position: 'fixed',
+    width: '320px',
+    height: '90px',
+    overflow: 'hidden',
+    opacity: '0',
+    pointerEvents: 'none',
+    left: '-320px',
+    top: '0',
+    zIndex: '-1',
+  });
   return el;
+}
+
+/** Wait two frames so Turnstile can attach its iframe before execute(). */
+function afterNextPaint(fn) {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(fn);
+  });
 }
 
 let widgetId = null;
@@ -58,24 +70,58 @@ function runTurnstileOnce(siteKey) {
           pending = { resolve, reject };
           const el = ensureHostEl();
 
-          const onErr = (code) => {
+          const onErr = (errorCode) => {
             const p = pending;
             pending = null;
-            if (code != null) console.warn('[turnstile] widget error', code);
-            const local =
+            const host =
+              typeof window !== 'undefined' ? window.location.hostname : '';
+            console.warn('[turnstile] widget error', { errorCode, host });
+
+            let detail = '';
+            if (errorCode === 110200) {
+              detail = ` Domain not allowed for this site key (browser reports hostname "${host}"). In Turnstile → Hostname Management add this exact hostname — often you must add \`::1\` separately from \`localhost\`. Or use http://127.0.0.1:${window.location.port || 'PORT'} in the address bar.`;
+            } else if (errorCode === 200500) {
+              detail =
+                ' Challenge iframe failed to load — disable ad blockers for this page, allow challenges.cloudflare.com, or try another browser. A broken integration can also cause this (try rebuilding the client after updating turnstile.js).';
+            } else if (errorCode === 110100 || errorCode === 110110 || errorCode === 400020) {
+              detail =
+                ' Check that VITE_TURNSTILE_SITE_KEY matches the site key shown in the Cloudflare Turnstile dashboard for this widget.';
+            } else if (errorCode === 400070) {
+              detail = ' This site key is disabled in the Cloudflare Turnstile dashboard.';
+            } else if (errorCode != null) {
+              detail = ` See Cloudflare Turnstile client-side error codes (code ${errorCode}).`;
+            }
+
+            const looksLocal =
               typeof window !== 'undefined' &&
-              /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname);
-            const hint = local
-              ? ' For local testing: add `localhost` (and/or `127.0.0.1`) to your Turnstile widget hostnames in Cloudflare, or use Cloudflare’s dummy site + secret keys from their Turnstile testing docs.'
+              /^(localhost|127\.0\.0\.1|::1)$/i.test(host);
+            const genericLocalHint = looksLocal
+              ? ' When creating the Turnstile widget, choose type Invisible (a Managed-widget site key may not work with invisible rendering in code). Or use dummy invisible site key 1x00000000000000000000BB + secret 1x0000000000000000000000000000000AA for dev — see Cloudflare Turnstile testing docs.'
               : '';
-            p?.reject(new Error(`Turnstile verification failed.${hint}`));
+
+            const codePart =
+              errorCode != null && errorCode !== ''
+                ? ` (error code ${errorCode})`
+                : ' (token expired or challenge error)';
+            p?.reject(new Error(`Turnstile verification failed${codePart}.${detail}${genericLocalHint}`));
           };
 
           try {
+            const runExecute = () => {
+              try {
+                window.turnstile.execute(widgetId);
+              } catch (e) {
+                const p = pending;
+                pending = null;
+                reject(e instanceof Error ? e : new Error(String(e)));
+              }
+            };
+
             if (widgetId == null) {
               widgetId = window.turnstile.render(el, {
                 sitekey: siteKey,
                 size: 'invisible',
+                execution: 'execute',
                 callback: (token) => {
                   const p = pending;
                   pending = null;
@@ -84,10 +130,11 @@ function runTurnstileOnce(siteKey) {
                 'error-callback': onErr,
                 'expired-callback': onErr,
               });
+              afterNextPaint(runExecute);
             } else {
               window.turnstile.reset(widgetId);
+              afterNextPaint(runExecute);
             }
-            window.turnstile.execute(widgetId);
           } catch (e) {
             const p = pending;
             pending = null;
@@ -103,10 +150,17 @@ export async function getTurnstileToken(siteKey) {
   return done;
 }
 
-/** Adds `turnstileToken` when `VITE_TURNSTILE_SITE_KEY` is set (production / optional dev). */
+/** Wrap fetch so sliding Turnstile session headers update sessionStorage after AI calls. */
+export async function fetchWithTurnstile(url, init) {
+  const res = await fetch(url, init);
+  captureRhTurnstileSessionFromResponse(res);
+  return res;
+}
+
+/** Adds `turnstileSession` when Turnstile + session exchange are configured (amortizes widget latency). */
 export async function withTurnstilePayload(payload) {
   const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim();
   if (!siteKey) return payload;
-  const token = await getTurnstileToken(siteKey);
-  return { ...payload, turnstileToken: token };
+  const session = await ensureRhTurnstileSession(siteKey);
+  return { ...payload, turnstileSession: session };
 }

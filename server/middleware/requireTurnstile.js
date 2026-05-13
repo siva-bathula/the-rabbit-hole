@@ -1,49 +1,81 @@
-/** Cloudflare Turnstile server-side verification for anonymous AI routes. */
+/** Cloudflare Turnstile + short-lived HMAC session for anonymous AI routes. */
 
-const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+import { verifyTurnstileResponse } from '../lib/turnstileSiteverify.js';
+import {
+  parseAndVerifyRhTurnstileSession,
+  signRhTurnstileSessionRenew,
+} from '../lib/rhTurnstileSession.js';
+
+function stripTurnstileFields(req) {
+  if (req.body && typeof req.body === 'object') {
+    delete req.body.turnstileToken;
+    delete req.body.turnstileSession;
+  }
+}
+
+function readTurnstileSession(req) {
+  const fromBody =
+    typeof req.body?.turnstileSession === 'string' ? req.body.turnstileSession.trim() : '';
+  const fromHeader =
+    typeof req.headers['x-rh-turnstile-session'] === 'string'
+      ? req.headers['x-rh-turnstile-session'].trim()
+      : '';
+  return fromBody || fromHeader || '';
+}
+
+function readWidgetToken(req) {
+  return (
+    (typeof req.body?.turnstileToken === 'string' && req.body.turnstileToken.trim()) ||
+    (typeof req.headers['x-turnstile-token'] === 'string' && req.headers['x-turnstile-token'].trim()) ||
+    ''
+  );
+}
+
+function attachSlidingSessionHeader(res, req) {
+  const origJson = res.json.bind(res);
+  res.json = function slidingTurnstileJson(body) {
+    const code = res.statusCode;
+    if (req.rhIssueSlidingSession && code >= 200 && code < 300) {
+      res.setHeader('X-RH-Turnstile-Session', req.rhIssueSlidingSession);
+    }
+    delete req.rhIssueSlidingSession;
+    return origJson(body);
+  };
+}
 
 /**
- * @param {{ secretKey: string }} opts
- * @returns {import('express').RequestHandler}
+ * @param {{ secretKey: string, sessionSignerSecret: string }} opts
  */
-export function createRequireTurnstile({ secretKey }) {
+export function createRequireTurnstile({ secretKey, sessionSignerSecret }) {
   return async function requireTurnstile(req, res, next) {
-    const token =
-      (typeof req.body?.turnstileToken === 'string' && req.body.turnstileToken) ||
-      (typeof req.headers['x-turnstile-token'] === 'string' && req.headers['x-turnstile-token']);
+    const sessionTok = readTurnstileSession(req);
+    const parsed = sessionTok ? parseAndVerifyRhTurnstileSession(sessionTok, sessionSignerSecret) : null;
 
-    if (!token?.trim()) {
+    if (parsed) {
+      stripTurnstileFields(req);
+      if (!parsed.legacy) {
+        req.rhIssueSlidingSession = signRhTurnstileSessionRenew(sessionSignerSecret, parsed);
+        attachSlidingSessionHeader(res, req);
+      }
+      return next();
+    }
+
+    const token = readWidgetToken(req);
+    if (!token) {
       return res.status(403).json({
         error: 'Verification required. Please reload the page and try again.',
       });
     }
 
-    const params = new URLSearchParams();
-    params.set('secret', secretKey);
-    params.set('response', token.trim());
-    const ip = req.ip || req.socket?.remoteAddress;
-    if (ip) params.set('remoteip', ip);
-
-    try {
-      const r = await fetch(SITEVERIFY_URL, {
-        method: 'POST',
-        body: params,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    const ok = await verifyTurnstileResponse(token, secretKey, req.ip || req.socket?.remoteAddress);
+    if (!ok) {
+      console.warn('[turnstile] siteverify failed');
+      return res.status(403).json({
+        error: 'Verification failed. Please try again.',
       });
-      const data = await r.json();
-      if (!data.success) {
-        const codes = data['error-codes'];
-        console.warn('[turnstile] verify failed', codes);
-        return res.status(403).json({
-          error: 'Verification failed. Please try again.',
-        });
-      }
-    } catch (e) {
-      console.error('[turnstile] siteverify request error:', e?.message || e);
-      return res.status(503).json({ error: 'Verification service unavailable. Try again shortly.' });
     }
 
-    if (req.body && typeof req.body === 'object') delete req.body.turnstileToken;
+    stripTurnstileFields(req);
     next();
   };
 }

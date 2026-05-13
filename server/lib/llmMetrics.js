@@ -27,14 +27,15 @@ export function recordLlmCall(n = 1) {
   pendingDelta += n;
 }
 
-export async function flushLlmMetricsNow() {
-  if (!isLlmMetricsEnabled()) return;
+/** Always resolves; restores pending count on failure (Firestore may reject auxiliary promises otherwise). */
+export function flushLlmMetricsNow() {
+  if (!isLlmMetricsEnabled()) return Promise.resolve();
 
   const n = pendingDelta;
   pendingDelta = 0;
-  if (n <= 0) return;
+  if (n <= 0) return Promise.resolve();
 
-  try {
+  return (async () => {
     const firestore = getSharedFirestore();
     await firestore.collection(COLLECTION).doc(DOC_ID).set(
       {
@@ -43,10 +44,10 @@ export async function flushLlmMetricsNow() {
       },
       { merge: true },
     );
-  } catch (err) {
+  })().catch((err) => {
     pendingDelta += n;
     console.error('[llm-metrics] flush failed:', err?.message || err);
-  }
+  });
 }
 
 function onShutdown() {

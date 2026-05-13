@@ -18,7 +18,9 @@ import { startTrendingRefresh } from './services/trending.js';
 import { probeGeminiFlashGraphOnStartup } from './services/deepseek.js';
 import { startLlmMetrics } from './lib/llmMetrics.js';
 import { FirestoreRateLimitStore } from './lib/rateLimitFirestoreStore.js';
+import { resolveTurnstileSessionSignerSecret } from './lib/rhTurnstileSession.js';
 import { createRequireTurnstile } from './middleware/requireTurnstile.js';
+import { createTurnstileSessionPostHandler } from './routes/turnstileSession.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -124,10 +126,26 @@ if (disableTurnstile) {
       res.status(503).json({ error: 'Server misconfiguration: Turnstile secret is not set.' });
   }
 } else {
-  requireTurnstile = createRequireTurnstile({ secretKey: turnstileSecret });
+  const sessionSignerSecret = resolveTurnstileSessionSignerSecret(turnstileSecret, {
+    disableTurnstile,
+    isDev: IS_DEV,
+  });
+  requireTurnstile = createRequireTurnstile({
+    secretKey: turnstileSecret,
+    sessionSignerSecret,
+  });
 }
 
 app.use(express.json());
+
+app.post(
+  '/api/turnstile/session',
+  createTurnstileSessionPostHandler({
+    turnstileSecret,
+    disableTurnstile,
+    isDev: IS_DEV,
+  }),
+);
 
 // Production: POST /api must declare an allowed Origin (blocks naive curl/Postman without Origin).
 // Does not stop clients that forge Origin; pairs with Turnstile on LLM routes.

@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { graphPrimaryRootId } from '../lib/graphRoot.js';
-import { withTurnstilePayload } from '../lib/turnstile.js';
+import { withTurnstilePayload, fetchWithTurnstile } from '../lib/turnstile.js';
 
 function buildOutgoingAdj(links) {
   const m = new Map();
@@ -111,7 +111,7 @@ export function useGraph() {
         articleUrl,
         fromTrending,
       });
-      const res = await fetch('/api/explore', {
+      const res = await fetchWithTurnstile('/api/explore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -204,7 +204,7 @@ export function useGraph() {
             sessionTopic: sessionTopicRef.current || '',
             groundingContext: groundingContextRef.current || '',
           });
-          const res = await fetch('/api/expand', {
+          const res = await fetchWithTurnstile('/api/expand', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(expandBody),

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { isPrimaryGraphRoot } from '../lib/graphRoot.js';
-import { withTurnstilePayload } from '../lib/turnstile.js';
+import { withTurnstilePayload, fetchWithTurnstile } from '../lib/turnstile.js';
 
 const MODES = [
   { id: 'eli5', label: 'Simple' },
@@ -71,7 +71,7 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
           groundingContext: groundingContext || '',
           mode: explainMode,
         });
-        const r = await fetch('/api/explain', {
+        const r = await fetchWithTurnstile('/api/explain', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
@@ -110,7 +110,7 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
         existingSummary: explanation.summary || '',
         mode: explainMode,
       });
-      const res = await fetch('/api/deepen', {
+      const res = await fetchWithTurnstile('/api/deepen', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

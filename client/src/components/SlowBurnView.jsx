@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import FolderTree from './FolderTree.jsx';
 import { useSlowBurn } from '../hooks/useSlowBurn.js';
 import { graphPrimaryRootId } from '../lib/graphRoot.js';
-import { withTurnstilePayload } from '../lib/turnstile.js';
+import { withTurnstilePayload, fetchWithTurnstile } from '../lib/turnstile.js';
 
 const MODES = [
   { id: 'eli5', label: 'Simple' },
@@ -57,7 +57,7 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
           groundingContext: groundingContext || '',
           mode,
         });
-        const r = await fetch('/api/explain', {
+        const r = await fetchWithTurnstile('/api/explain', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
@@ -97,7 +97,7 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
         existingSummary: explanation.summary || '',
         mode,
       });
-      const res = await fetch('/api/deepen', {
+      const res = await fetchWithTurnstile('/api/deepen', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

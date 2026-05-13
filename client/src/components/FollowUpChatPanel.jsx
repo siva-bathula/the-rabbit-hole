@@ -5,7 +5,7 @@ import {
   getFollowUpChainLeafId,
   collectFollowUpMessages,
 } from '../lib/followUpGraph.js';
-import { withTurnstilePayload } from '../lib/turnstile.js';
+import { withTurnstilePayload, fetchWithTurnstile } from '../lib/turnstile.js';
 
 export default function FollowUpChatPanel({
   triggerNode,
@@ -57,7 +57,7 @@ export default function FollowUpChatPanel({
           groundingContext: groundingContext || '',
           messages: apiMessages,
         });
-        const res = await fetch('/api/followup', {
+        const res = await fetchWithTurnstile('/api/followup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
