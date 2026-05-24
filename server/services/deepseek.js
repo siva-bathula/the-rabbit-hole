@@ -150,8 +150,8 @@ export function parseDeepseekAssistantJson(response, routeLabel = 'deepseek') {
 }
 
 const geminiClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const GEMINI_MODEL_FLASH_LITE = 'gemini-2.5-flash-lite';
-const GEMINI_MODEL_FLASH = 'gemini-2.5-flash';
+const GEMINI_MODEL_FLASH_LITE = 'gemini-3.1-flash-lite-preview';
+const GEMINI_MODEL_FLASH = 'gemini-3-flash-preview';
 const GEMINI_MODEL_PRO = 'gemini-2.5-pro';
 
 /** Consecutive gemini-2.5-flash failures before switching graph calls to flash-lite (override with GEMINI_FLASH_FAIL_THRESHOLD). */
