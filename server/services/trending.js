@@ -1,6 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import { recordLlmCall } from '../lib/llmMetrics.js';
-import { deepseekV4FlashChat } from './deepseek.js';
+import { deepseekV4FlashChat, parseDeepseekAssistantJson } from './deepseek.js';
 
 // Indian news RSS feeds — tried in order, first to return ≥3 valid headlines wins
 const RSS_SOURCES = [
@@ -296,7 +296,7 @@ Return ONLY a JSON object: { "topics": [ { "label": "...", "headline": "..." }, 
   );
   recordLlmCall(1);
 
-  const data = JSON.parse(response.choices[0].message.content);
+  const data = parseDeepseekAssistantJson(response, 'trending');
   if (!Array.isArray(data.topics) || data.topics.length === 0) {
     throw new Error('Invalid topics response from AI');
   }

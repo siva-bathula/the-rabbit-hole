@@ -42,6 +42,29 @@ function omitSamplingParamsForThinkingMode(params) {
   return p;
 }
 
+/** DeepSeek/OpenAI client may throw TypeError(...'choices') on malformed upstream JSON — normalize to a clearer error. */
+async function completionFromDeepseek(label, pending) {
+  try {
+    const out = await pending;
+    if (out == null) {
+      throw new Error(`${label} completion resolved empty — bad API envelope or proxy`);
+    }
+    return out;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const isBrokenChoicesEnvelope =
+      err instanceof TypeError && /\bchoices\b/.test(msg);
+    if (isBrokenChoicesEnvelope) {
+      const wrapped = new Error(
+        `${label} unreadable completion payload (${msg}). Retry; confirm DEEPSEEK_API_KEY, model ids, DeepSeek uptime; try DEEPSEEK_THINKING_ENABLED=0.`,
+      );
+      wrapped.cause = err;
+      throw wrapped;
+    }
+    throw err;
+  }
+}
+
 /**
  * V4 Flash — optional thinking (see `DEEPSEEK_THINKING_ENABLED`, `deepseekThinkingChatConfig`).
  * @param {Omit<import('openai').OpenAI.ChatCompletionCreateParamsNonStreaming, 'model' | 'stream'>} params
@@ -50,11 +73,14 @@ export async function deepseekV4FlashChat(params) {
   const body = isDeepseekThinkingEnabled()
     ? { ...omitSamplingParamsForThinkingMode(params), ...deepseekThinkingChatConfig }
     : { ...params };
-  return client.chat.completions.create({
-    ...body,
-    model: getDeepseekV4FlashModel(),
-    stream: false,
-  });
+  return completionFromDeepseek(
+    '[deepseek.flash]',
+    client.chat.completions.create({
+      ...body,
+      model: getDeepseekV4FlashModel(),
+      stream: false,
+    }),
+  );
 }
 
 /**
@@ -65,12 +91,64 @@ async function deepseekV4ProThinkingChat(params) {
   const body = isDeepseekThinkingEnabled()
     ? { ...omitSamplingParamsForThinkingMode(params), ...deepseekThinkingChatConfig }
     : { ...params };
-  return client.chat.completions.create({
-    ...body,
-    model: getDeepseekV4ProModel(),
-    stream: false,
-  });
+  return completionFromDeepseek(
+    '[deepseek.pro]',
+    client.chat.completions.create({
+      ...body,
+      model: getDeepseekV4ProModel(),
+      stream: false,
+    }),
+  );
 }
+
+/**
+ * Extract assistant text from a non-stream DeepSeek/OpenAI-compatible chat completion,
+ * then parse JSON. Gives actionable errors instead of `(reading 'choices')`.
+ *
+ * @param {unknown} response
+ * @param {string} [routeLabel] e.g. "explain", for structured logs/errors
+ */
+export function parseDeepseekAssistantJson(response, routeLabel = 'deepseek') {
+  const prefix = `[${routeLabel}] `;
+
+  if (response == null || typeof response !== 'object' || Array.isArray(response)) {
+    throw new Error(`${prefix}completion API returned an empty response`);
+  }
+
+  const choices = /** @type {{ choices?: unknown }} */ (response).choices;
+  if (!Array.isArray(choices) || choices.length === 0) {
+    throw new Error(
+      `${prefix}completion returned no choices (API outage, bad model id, quota, or transport issue)`,
+    );
+  }
+
+  const message = /** @type {{ message?: unknown }} */ (choices[0])?.message;
+  if (message == null || typeof message !== 'object') {
+    throw new Error(`${prefix}completion missing assistant message`);
+  }
+
+  const raw = /** @type {{ content?: unknown }} */ (message).content;
+  const text =
+    raw != null && String(raw).trim() !== ''
+      ? typeof raw === 'string'
+        ? raw
+        : String(raw)
+      : '';
+
+  if (!text) {
+    throw new Error(
+      `${prefix}completion had empty assistant content — retry or try DEEPSEEK_THINKING_ENABLED=0 if this persists`,
+    );
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`${prefix}model reply was not valid JSON: ${msg}`);
+  }
+}
+
 const geminiClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const GEMINI_MODEL_FLASH_LITE = 'gemini-2.5-flash-lite';
 const GEMINI_MODEL_FLASH = 'gemini-2.5-flash';
@@ -634,7 +712,7 @@ Be precise and specific. Every word should earn its place.`;
   });
   recordLlmCall(1);
 
-  return JSON.parse(response.choices[0].message.content);
+  return parseDeepseekAssistantJson(response, 'explain');
 }
 
 export async function deepenNode(
@@ -728,7 +806,7 @@ Be precise. Every sentence must earn its place. No filler.`;
     : await deepseekV4FlashChat({ ...common, temperature: deepenTemp });
   recordLlmCall(1);
 
-  return JSON.parse(response.choices[0].message.content);
+  return parseDeepseekAssistantJson(response, 'deepen');
 }
 
 /**
@@ -777,7 +855,7 @@ Return ONLY a JSON object: { "reply": string, "offTopic": boolean }` +
   });
   recordLlmCall(1);
 
-  const data = JSON.parse(response.choices[0].message.content);
+  const data = parseDeepseekAssistantJson(response, 'followup');
   const reply = typeof data.reply === 'string' ? data.reply : '';
   const offTopic = Boolean(data.offTopic);
   return { reply, offTopic };
@@ -941,7 +1019,7 @@ Rules:
   });
   recordLlmCall(1);
 
-  const data = JSON.parse(response.choices[0].message.content);
+  const data = parseDeepseekAssistantJson(response, 'compare');
   const summary = typeof data.summary === 'string' ? data.summary : '';
   let columns = Array.isArray(data.columns) ? data.columns : [];
   if (columns.length !== subjects.length) {

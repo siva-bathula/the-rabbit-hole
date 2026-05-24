@@ -18,6 +18,18 @@ export async function followupPostHandler(req, res) {
     return res.status(400).json({ error: 'messages array is required' });
   }
 
+  const validMessages = messages.filter(
+    (m) =>
+      m &&
+      (m.role === 'user' || m.role === 'assistant') &&
+      typeof m.content === 'string',
+  );
+  if (validMessages.length === 0) {
+    return res.status(400).json({
+      error: 'messages must contain at least one valid user or assistant entry',
+    });
+  }
+
   try {
     const result = await followUpChat({
       branchNodeLabel: branchNodeLabel.trim(),
@@ -25,12 +37,7 @@ export async function followupPostHandler(req, res) {
       rootTopic: typeof rootTopic === 'string' ? rootTopic : '',
       sessionTopic: typeof sessionTopic === 'string' ? sessionTopic : '',
       groundingContext: typeof groundingContext === 'string' ? groundingContext : '',
-      messages: messages.filter(
-        (m) =>
-          m &&
-          (m.role === 'user' || m.role === 'assistant') &&
-          typeof m.content === 'string',
-      ),
+      messages: validMessages,
     });
     res.json(result);
   } catch (err) {
