@@ -650,7 +650,7 @@ export default function SlowBurnView({
             </button>
           )}
 
-          {/* Branch-out progress bar */}
+          {/* Go Deeper progress bar */}
           {isExpanding && (
             <div className="w-full h-1 bg-white/10 overflow-hidden rounded-full mb-2">
               <div className="h-full bg-purple-400 animate-progress-indeterminate" />
@@ -716,14 +716,14 @@ export default function SlowBurnView({
                 {isExpanding ? (
                   <>
                     <div className="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                    Expanding...
+                    Going deeper…
                   </>
                 ) : (
                   <>
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
-                    Branch Out
+                    Go Deeper
                   </>
                 )}
               </button>

@@ -475,7 +475,7 @@ export default function SearchBar({
           <p className="text-white/15 text-xs">
             {mode === 'slow'
               ? 'Guided reading · one concept at a time · go as deep as you want'
-              : 'Click any node to explore · "Branch Out" to expand · Scroll to zoom'}
+              : 'Click any node to explore · "Go Deeper" to expand · Scroll to zoom'}
           </p>
           <p className="text-white/12 text-xs">
             AI-generated content · may be inaccurate · not professional advice

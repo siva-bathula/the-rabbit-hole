@@ -241,7 +241,7 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
               <div className="w-10 h-1 rounded-full bg-white/20" />
             </div>
 
-            {/* Branch-out progress bar */}
+            {/* Go Deeper progress bar */}
             {isExpanding && (
               <div className="w-full h-1 bg-white/10 overflow-hidden flex-shrink-0">
                 <div className="h-full bg-purple-400 animate-progress-indeterminate" />
@@ -296,7 +296,7 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
               </div>
             </div>
 
-            {/* Branch Out progress banner */}
+            {/* Go Deeper progress banner */}
             {isExpanding && (
               <div
                 className="flex items-center gap-3 px-5 py-3 flex-shrink-0"
@@ -304,7 +304,7 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
               >
                 <div className="w-4 h-4 rounded-full border-2 border-purple-400/30 border-t-purple-400 animate-spin flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-purple-300 text-sm font-medium">Branching out…</p>
+                  <p className="text-purple-300 text-sm font-medium">Going deeper…</p>
                   <p className="text-purple-300/50 text-xs mt-0.5">Fetching subtopics for <span className="text-purple-300/80">{node.label}</span></p>
                 </div>
                 {/* Animated progress bar */}
@@ -668,7 +668,7 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
                   {isExpanding ? (
                     <>
                       <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                      Branching out…
+                      Going deeper…
                     </>
                   ) : (
                     <>
@@ -676,7 +676,7 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                           d="M19 9l-7 7-7-7" />
                       </svg>
-                      Branch Out
+                      Go Deeper
                     </>
                   )}
                 </button>
