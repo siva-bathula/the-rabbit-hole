@@ -1,6 +1,8 @@
 /** Shared Cloudflare Turnstile siteverify call. */
 
-const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
+// API revision stays `v0`: https://developers.cloudflare.com/turnstile/get-started/server-side-validation/
+const TURNSTILE_API_REVISION = 'v0';
+const SITEVERIFY_URL = `https://challenges.cloudflare.com/turnstile/${TURNSTILE_API_REVISION}/siteverify`;
 
 /**
  * @param {string} responseToken
@@ -9,16 +11,15 @@ const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverif
  * @returns {Promise<boolean>}
  */
 export async function verifyTurnstileResponse(responseToken, secretKey, remoteIp) {
-  const params = new URLSearchParams();
-  params.set('secret', secretKey);
-  params.set('response', responseToken.trim());
-  if (remoteIp) params.set('remoteip', remoteIp);
-
   try {
     const r = await fetch(SITEVERIFY_URL, {
       method: 'POST',
-      body: params,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        secret: secretKey,
+        response: responseToken.trim(),
+        ...(remoteIp ? { remoteip: remoteIp } : {}),
+      }),
     });
     const data = await r.json();
     return Boolean(data.success);

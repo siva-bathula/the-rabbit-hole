@@ -2,7 +2,10 @@
 
 import { captureRhTurnstileSessionFromResponse, ensureRhTurnstileSession } from './turnstileSession.js';
 
-const SCRIPT_SRC = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+// API revision stays `v0`; do not proxy/cache this script (Turnstile requirement).
+// https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/
+const TURNSTILE_API_REVISION = 'v0';
+const SCRIPT_SRC = `https://challenges.cloudflare.com/turnstile/${TURNSTILE_API_REVISION}/api.js?render=explicit`;
 
 let scriptPromise = null;
 
@@ -77,18 +80,36 @@ function runTurnstileOnce(siteKey) {
               typeof window !== 'undefined' ? window.location.hostname : '';
             console.warn('[turnstile] widget error', { errorCode, host });
 
+            /** Turnstile may pass numeric strings (e.g. `"300031"`); normalize for reliable matching. */
+            const codeNorm =
+              errorCode == null || errorCode === ''
+                ? NaN
+                : typeof errorCode === 'number'
+                  ? errorCode
+                  : Number.parseInt(String(errorCode), 10);
+            const codeFamily =
+              Number.isFinite(codeNorm) ? Math.floor(codeNorm / 1000) : NaN;
+
             let detail = '';
-            if (errorCode === 110200) {
+            if (codeNorm === 110200) {
               detail = ` Domain not allowed for this site key (browser reports hostname "${host}"). In Turnstile → Hostname Management add this exact hostname — often you must add \`::1\` separately from \`localhost\`. Or use http://127.0.0.1:${window.location.port || 'PORT'} in the address bar.`;
-            } else if (errorCode === 200500) {
+            } else if (codeNorm === 200500) {
               detail =
                 ' Challenge iframe failed to load — disable ad blockers for this page, allow challenges.cloudflare.com, or try another browser. A broken integration can also cause this (try rebuilding the client after updating turnstile.js).';
-            } else if (errorCode === 110100 || errorCode === 110110 || errorCode === 400020) {
+            } else if (
+              codeNorm === 110100 ||
+              codeNorm === 110110 ||
+              codeNorm === 400020
+            ) {
               detail =
                 ' Check that VITE_TURNSTILE_SITE_KEY matches the site key shown in the Cloudflare Turnstile dashboard for this widget.';
-            } else if (errorCode === 400070) {
+            } else if (codeNorm === 400070) {
               detail = ' This site key is disabled in the Cloudflare Turnstile dashboard.';
-            } else if (errorCode != null) {
+            } else if (codeFamily === 300 || codeFamily === 600) {
+              // 300031, 600010, … — trailing digits are internal per Cloudflare; means "generic challenge failure".
+              detail =
+                ' Cloudflare flagged this session during the invisible check (often VPN/browser extensions/private mode/network). Retry or refresh; try another browser, disable extensions, avoid VPN/proxy, or switch networks.';
+            } else if (errorCode != null && errorCode !== '') {
               detail = ` See Cloudflare Turnstile client-side error codes (code ${errorCode}).`;
             }
 
