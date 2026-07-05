@@ -652,24 +652,56 @@ export async function explainNode(
       ? `Write for a domain expert who already has strong foundational knowledge. Use precise technical terminology without simplification. Skip basic definitions and introductory context entirely. Focus on mechanisms, edge cases, performance characteristics, design trade-offs, and non-obvious nuances a senior practitioner would find genuinely insightful. Be direct and technically rigorous ? every sentence must add real value. Avoid filler metaphors; state mechanisms plainly.`
       : mode === 'layman'
       ? `Write for an adult who is curious but has no background in this field. Use plain, neutral English (no childish tone). Avoid unexplained jargon; when a technical term is necessary, define it in one short clause on first use. Spell out or expand acronyms on first use. Be respectful and direct—like a good documentary narrator, not a textbook.`
+      : mode === 'verbose'
+      ? `Write comprehensively for an educated general audience. Your goal is MAXIMUM COVERAGE — leave no important aspect of this topic unaddressed. Use clear, precise prose; vary sentence length for readability but never truncate ideas prematurely. Define technical terms in one clause when needed. Be thorough and encyclopedic in spirit — like a high-quality textbook chapter or detailed reference article, not a brief summary.`
       : `Write in the voice of a warm, knowledgeable educator using natural Indian English: phrases like "basically", "actually", "you see", "only" for emphasis, and occasionally "isn't it?" or "right?". Be direct and conversational: put the idea in plain words first. Do not use extended analogies, whimsical comparisons, or stock "everyday life" metaphors (markets, vendors, traffic, etc.). If one concrete example truly helps, use at most one short factual line—not a story.`;
 
   const explainTemp =
-    mode === 'eli5' ? 0.68 : mode === 'expert' ? 0.72 : mode === 'layman' ? 0.52 : 0.42;
+    mode === 'eli5' ? 0.68 : mode === 'expert' ? 0.72 : mode === 'layman' ? 0.52 : mode === 'verbose' ? 0.75 : 0.42;
+
+  const isVerbose = mode === 'verbose';
+
+  const summaryRootDesc = isVerbose
+    ? `"summary": 5-7 sentence comprehensive overview — what it is, why it matters, how it works at a high level, its key variants or forms, and its broader significance (string)`
+    : `"summary": 2-3 sentence overview of what this topic is and why it matters (string)`;
+
+  const summarySubDesc = isVerbose
+    ? `"summary": 5-7 sentences comprehensively explaining what "${nodeLabel}" is and does within "${parentContext}" — cover definition, mechanism, significance, key variants, and any important nuances (string)`
+    : `"summary": 2-3 sentences explaining what "${nodeLabel}" specifically means or does in the context of "${parentContext}" (string)`;
+
+  const detailsRootDesc = isVerbose
+    ? `"details": array of 12-18 insight strings with HIGH COVERAGE — address ALL major dimensions: core mechanism, types/variants, practical applications, historical context, limitations/pitfalls, real-world impact, common misconceptions, and any other angles essential to a thorough understanding. Each bullet must be a substantive, self-contained insight (2-3 sentences each). Cover the topic exhaustively. (array of strings)`
+    : `"details": array of key insight strings (typically 4-6; use 6-8 when the topic is complex or genuinely needs that many distinct points; 3-4 is fine for simple/narrow nodes; max 8, no padding) that map what matters for this topic (array of strings)`;
+
+  const detailsSubDesc = isVerbose
+    ? `"details": array of 12-18 insight strings with HIGH COVERAGE — address ALL important dimensions of "${nodeLabel}" within "${parentContext}": mechanism, variants, applications, limitations, context, impact, and misconceptions. Each bullet must be substantive (2-3 sentences each). Cover exhaustively. (array of strings)`
+    : `"details": array of key insight strings, each non-obvious or important for "${nodeLabel}" in "${parentContext}" (typically 4-6; use 6-8 when the angle needs that many distinct points; 3-4 for simple cases; max 8, no padding) (array of strings)`;
+
+  const relatedRootDesc = isVerbose
+    ? `"related": array of 6-10 subtopics or adjacent concepts worth exploring (array of strings)`
+    : `"related": array of 3-5 subtopics or adjacent concepts worth exploring (array of strings)`;
+
+  const relatedSubDesc = isVerbose
+    ? `"related": array of 6-10 related concept labels the user might want to explore next (array of strings)`
+    : `"related": array of 3-5 related concept labels the user might want to explore next (array of strings)`;
+
+  const verboseLengthOverride = isVerbose
+    ? `\n\nVERBOSE MODE — override default length caps: generate 12-18 "details" bullets covering ALL important aspects exhaustively. Do NOT stop at 8. Each bullet should be 2-3 substantive sentences. Prefer completeness over brevity.`
+    : '';
 
   const systemPrompt = isRoot
     ? SAFETY_GUARDRAIL_BRIEF + `You are a clear, engaging educator. The user is exploring "${nodeLabel}" as their main topic.
 ${systemExtra}
 
 ${toneInstruction}
-${EXPLAIN_CLARITY_RULES}
+${EXPLAIN_CLARITY_RULES}${verboseLengthOverride}
 
 Return ONLY a valid JSON object with these fields (include every required key; omit optional learnMore if you cannot provide a verified https URL):
 - "title": the concept name (string)
-- "summary": 2-3 sentence overview of what this topic is and why it matters (string)
-- "details": array of key insight strings (typically 4-6; use 6-8 when the topic is complex or genuinely needs that many distinct points; 3-4 is fine for simple/narrow nodes; max 8, no padding) that map what matters for this topic (array of strings)
+- ${summaryRootDesc}
+- ${detailsRootDesc}
 - "keyTakeaway": ONE punchy sentence ? the single most important thing to remember about this topic. Must be different from the summary. Think of it as the "if you forget everything else, remember this" line. (string)
-- "related": array of 3-5 subtopics or adjacent concepts worth exploring (array of strings)
+- ${relatedRootDesc}
 ${learnMoreField}
 ${codeField}
 
@@ -678,7 +710,7 @@ Be specific and concrete. Write like a brilliant friend giving a first orientati
 ${systemExtra}
 
 ${toneInstruction}
-${EXPLAIN_CLARITY_RULES}
+${EXPLAIN_CLARITY_RULES}${verboseLengthOverride}
 
 CRITICAL RULES:
 1. Do NOT re-introduce or re-explain "${parentContext}" ??? assume the user already understands it.
@@ -687,17 +719,18 @@ CRITICAL RULES:
 
 Return ONLY a valid JSON object with these fields (include every required key; omit optional learnMore if you cannot provide a verified https URL):
 - "title": the concept name (string)
-- "summary": 2-3 sentences explaining what "${nodeLabel}" specifically means or does in the context of "${parentContext}" (string)
-- "details": array of key insight strings, each non-obvious or important for "${nodeLabel}" in "${parentContext}" (typically 4-6; use 6-8 when the angle needs that many distinct points; 3-4 for simple cases; max 8, no padding) (array of strings)
+- ${summarySubDesc}
+- ${detailsSubDesc}
 - "keyTakeaway": ONE punchy sentence ? the single most important thing to remember about "${nodeLabel}". Must be different from the summary. Think of it as the "if you forget everything else, remember this" line. (string)
-- "related": array of 3-5 related concept labels the user might want to explore next (array of strings)
+- ${relatedSubDesc}
 ${learnMoreField}
 ${codeField}
 
 Be precise and specific. Every word should earn its place.`;
 
   const g = sourceGroundingSuffix(groundingContext);
-  const response = await deepseekV4FlashChat({
+  const useProModel = mode === 'expert' || mode === 'verbose';
+  const explainCommon = {
     messages: [
       { role: 'system', content: systemPrompt },
       {
@@ -708,8 +741,12 @@ Be precise and specific. Every word should earn its place.`;
       },
     ],
     response_format: { type: 'json_object' },
-    temperature: explainTemp,
-  });
+  };
+  const response = useProModel
+    ? await deepseekV4ProThinkingChat(
+        isDeepseekThinkingEnabled() ? explainCommon : { ...explainCommon, temperature: explainTemp },
+      )
+    : await deepseekV4FlashChat({ ...explainCommon, temperature: explainTemp });
   recordLlmCall(1);
 
   return parseDeepseekAssistantJson(response, 'explain');
@@ -734,14 +771,20 @@ export async function deepenNode(
       ? `Write for a deep domain expert. Advanced implementation details, subtle failure modes, performance nuances, and expert-level gotchas only. Technical precision above all ? no hand-holding. Avoid filler metaphors.`
       : mode === 'layman'
       ? `Still writing for an adult non-specialist: go deeper, but every insight must stay readable. No jargon without a quick gloss; no condescension; no fairy-tale analogies.`
+      : mode === 'verbose'
+      ? `Write an exhaustive deep-dive for an educated general audience. Your goal is COMPLETE COVERAGE of advanced, non-obvious aspects — leave no important nuance unaddressed. Be thorough, precise, and substantive. This is for someone who wants to truly understand every meaningful dimension of the topic in depth.`
       : `Write in the voice of a warm, knowledgeable educator: direct, confident, conversational Indian English ("basically", "actually", "you see", "only", occasional "isn't it?" or "right?"). Go deeper in plain language; do not lean on extended analogies or whimsical comparisons.`;
 
   const deepenTemp =
-    mode === 'eli5' ? 0.72 : mode === 'expert' ? 0.78 : mode === 'layman' ? 0.58 : 0.5;
+    mode === 'eli5' ? 0.72 : mode === 'expert' ? 0.78 : mode === 'layman' ? 0.58 : mode === 'verbose' ? 0.78 : 0.5;
 
   const codeField = needsCode
     ? `- "code": a DIFFERENT, more advanced code example string (not a repeat of any basics already shown). Demonstrate an edge case, optimisation, or real-world pattern. No markdown fences.`
     : '';
+
+  const deepenInsightsDesc = mode === 'verbose'
+    ? `- "advancedInsights": array of 8-12 strings, each a thorough advanced insight (NOT obvious facts) covering ALL important non-obvious angles — mechanisms, failure modes, trade-offs, historical context, real-world implications, and expert nuances. Each insight should be 2-3 substantive sentences. Aim for complete coverage, not brevity.`
+    : `- "advancedInsights": array of 3-5 strings, each a meaty advanced insight (NOT obvious facts) ? these should feel like tips from a senior engineer or professor; write plainly without metaphor padding`;
 
   const systemPrompt =
     mode === 'layman'
@@ -781,14 +824,14 @@ Your job is to go significantly deeper. Focus on:
 3. Advanced patterns, trade-offs, or design decisions
 
 Return ONLY a JSON object with exactly these fields:
-- "advancedInsights": array of 3-5 strings, each a meaty advanced insight (NOT obvious facts) ? these should feel like tips from a senior engineer or professor; write plainly without metaphor padding
+${deepenInsightsDesc}
 ${codeField}
 
 Be precise. Every sentence must earn its place. No filler.`;
 
   const g = sourceGroundingSuffix(groundingContext);
-  // Expert: V4 Pro + thinking (replaces deepseek-reasoner); other modes use V4 Flash for latency/cost.
-  const useProThinking = mode === 'expert';
+  // Expert and verbose use V4 Pro + thinking for higher-quality deep content.
+  const useProThinking = mode === 'expert' || mode === 'verbose';
   const common = {
     messages: [
       { role: 'system', content: systemPrompt },

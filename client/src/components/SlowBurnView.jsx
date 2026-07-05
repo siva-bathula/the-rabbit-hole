@@ -9,6 +9,7 @@ const MODES = [
   { id: 'layman', label: 'Layman' },
   { id: 'normal', label: 'Normal' },
   { id: 'expert', label: 'Expert' },
+  { id: 'verbose', label: 'Verbose' },
 ];
 
 function modeCacheKey(nodeId, mode) {
