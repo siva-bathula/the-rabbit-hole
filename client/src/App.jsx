@@ -90,6 +90,59 @@ function dedupeSessionsByTopic(sessions) {
   return Array.from(byKey.values());
 }
 
+function findSessionByShareId(sessions, shareId) {
+  const id = String(shareId || '').trim();
+  if (!id) return null;
+  return sessions.find((s) => s.shareId === id) ?? null;
+}
+
+/** Merge live graph into the sessions list; returns updated list + session id to mark active. */
+function applySessionSync(prev, session, activeId) {
+  const sharedId = String(session.shareId || '').trim();
+  if (sharedId) {
+    const byShare = prev.find((s) => s.shareId === sharedId);
+    if (byShare) {
+      return {
+        next: prev.map((s) =>
+          s.id === byShare.id
+            ? {
+                ...session,
+                id: byShare.id,
+                displayName: s.displayName,
+                createdAt: s.createdAt,
+                lastUsedAt: Date.now(),
+              }
+            : s,
+        ),
+        activeId: byShare.id,
+      };
+    }
+  }
+
+  if (activeId && prev.some((s) => s.id === activeId)) {
+    return {
+      next: prev.map((s) =>
+        s.id === activeId
+          ? {
+              ...session,
+              id: activeId,
+              displayName: s.displayName,
+              createdAt: s.createdAt,
+              lastUsedAt: Date.now(),
+            }
+          : s,
+      ),
+      activeId,
+    };
+  }
+  const next = upsertSessionByTopic(prev, { ...session, lastUsedAt: Date.now() });
+  const key = normalizeTopicKey(session.topic);
+  const match = key
+    ? next.find((s) => normalizeTopicKey(s.topic) === key)
+    : next.find((s) => s.id === session.id);
+  return { next, activeId: match?.id ?? session.id };
+}
+
 export default function App() {
   const [phase, setPhase] = useState('search'); // 'search' | 'graph'
   const [currentTopic, setCurrentTopic] = useState('');
@@ -268,6 +321,32 @@ export default function App() {
     if (phase === 'graph' && !isExploring) persistLive();
   }, [graphData, pathIds, phase, isExploring, persistLive]);
 
+  // Auto-add / update the active session while exploring (not only on "New Search").
+  const syncSessionFromLiveGraph = useCallback(() => {
+    if (!restoredRef.current) return;
+    const snap = snapshot();
+    if (!snap.graphData.nodes.length) return;
+
+    const session = buildSession(currentTopic, mode, snap, shareId, pathIds);
+    const aid = activeSessionIdRef.current;
+    let resolvedActiveId = aid;
+
+    commitSessions((prev) => {
+      const { next, activeId } = applySessionSync(prev, session, aid);
+      resolvedActiveId = activeId;
+      return next;
+    });
+
+    if (resolvedActiveId && resolvedActiveId !== aid) {
+      setActiveSessionId(resolvedActiveId);
+    }
+  }, [snapshot, currentTopic, mode, shareId, pathIds, commitSessions]);
+
+  useEffect(() => {
+    if (phase !== 'graph' || isExploring) return;
+    syncSessionFromLiveGraph();
+  }, [graphData, pathIds, phase, isExploring, shareId, syncSessionFromLiveGraph]);
+
   // #1 — Restore live graph on first mount (runs once)
   // If a ?share= param is present, load that graph from the API instead.
   useEffect(() => {
@@ -277,16 +356,63 @@ export default function App() {
     if (shareId) {
       // Load shared graph — skip live restore, clear the query param from the URL
       window.history.replaceState({}, '', window.location.pathname);
+
+      const existing = findSessionByShareId(loadSessions(), shareId);
+      if (existing) {
+        resetSessionPath();
+        restore({
+          graphData: existing.graphData,
+          expandedNodes: existing.expandedNodes,
+          rootLabel: existing.rootLabel,
+          sessionTopic: existing.topic || '',
+          parentLabelOf: existing.parentLabelOf,
+          originalPosition: existing.originalPosition,
+          explanationCache: existing.explanationCache,
+          expandDataCache: existing.expandDataCache,
+          groundingContext: existing.groundingContext || '',
+          comparisonSubjects: existing.comparisonSubjects ?? null,
+          comparisonAlignment: existing.comparisonAlignment ?? null,
+        });
+        replacePath(
+          filterPathToGraph(existing.explorationPathIds, existing.graphData.nodes),
+        );
+        setShareId(shareId);
+        setCurrentTopic(existing.topic);
+        setMode(existing.mode);
+        setPhase('graph');
+        setActiveSessionId(existing.id);
+        commitSessions((prev) =>
+          prev.map((s) =>
+            s.id === existing.id ? { ...s, lastUsedAt: Date.now() } : s,
+          ),
+        );
+        setGraphInteractionEpoch((n) => n + 1);
+        restoredRef.current = true;
+        return;
+      }
+
       fetch(`/api/share/${shareId}`)
         .then((r) => r.json())
         .then((data) => {
           if (data.error) return;
           const snap = deserializeShareSnap(data);
+          const topic =
+            (data.topic || snap.rootLabel || '').trim() || 'Shared exploration';
           resetSessionPath();
           restore(snap);
-          setCurrentTopic(data.topic || '');
+          setShareId(shareId);
+          setCurrentTopic(topic);
           setPhase('graph');
           setGraphInteractionEpoch((n) => n + 1);
+
+          const session = buildSession(topic, loadMode(), snap, shareId, []);
+          let resolvedActiveId = null;
+          commitSessions((prev) => {
+            const { next, activeId } = applySessionSync(prev, session, null);
+            resolvedActiveId = activeId;
+            return next;
+          });
+          if (resolvedActiveId) setActiveSessionId(resolvedActiveId);
         })
         .catch((err) => console.error('[share restore]', err))
         .finally(() => { restoredRef.current = true; });
@@ -324,21 +450,18 @@ export default function App() {
       shareId,
       pathIds,
     );
+    const aid = activeSessionIdRef.current;
+    let resolvedActiveId = aid;
     commitSessions((prev) => {
-      if (activeSessionId) {
-        const exists = prev.some((s) => s.id === activeSessionId);
-        if (exists) {
-          return prev.map((s) =>
-            s.id === activeSessionId
-              ? { ...session, id: activeSessionId, displayName: s.displayName }
-              : s,
-          );
-        }
-      }
-      return upsertSessionByTopic(prev, session);
+      const { next, activeId } = applySessionSync(prev, session, aid);
+      resolvedActiveId = activeId;
+      return next;
     });
-    return session.id;
-  }, [snapshot, currentTopic, mode, activeSessionId, shareId, pathIds, commitSessions]);
+    if (resolvedActiveId && resolvedActiveId !== aid) {
+      setActiveSessionId(resolvedActiveId);
+    }
+    return resolvedActiveId;
+  }, [snapshot, currentTopic, mode, shareId, pathIds, commitSessions]);
 
   // Switch to a saved session (saves current first)
   const switchToSession = useCallback((id) => {
