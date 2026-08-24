@@ -23,6 +23,14 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
   const [deeperContent, setDeeperContent] = useState(null);
   const [isPulling, setIsPulling] = useState(false);
   const [deeperError, setDeeperError] = useState(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  const handleReload = useCallback(() => {
+    if (!node) return;
+    const cacheKey = modeCacheKey(node.id, mode);
+    cache?.current?.delete(cacheKey);
+    setReloadNonce((n) => n + 1);
+  }, [node, mode, cache]);
 
   useEffect(() => {
     if (!node) return;
@@ -81,7 +89,7 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
     return () => {
       cancelled = true;
     };
-  }, [node?.id, parentContext, rootLabel, sessionTopic, groundingContext, mode]);
+  }, [node?.id, parentContext, rootLabel, sessionTopic, groundingContext, mode, reloadNonce]);
 
   const handlePullThread = useCallback(async () => {
     if (!explanation || isPulling) return;
@@ -120,11 +128,11 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
     }
   }, [explanation, isPulling, node, parentContext, rootLabel, sessionTopic, groundingContext, mode, cache]);
 
-  return { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread };
+  return { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread, handleReload };
 }
 
 function ContentArea({ node, parentContext, rootLabel, sessionTopic, groundingContext, cache, onExplore, onQuizMe, explainMode = 'normal', onExplainModeChange }) {
-  const { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread } = useNodeExplanation(node, parentContext, rootLabel, sessionTopic, groundingContext, cache, explainMode);
+  const { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread, handleReload } = useNodeExplanation(node, parentContext, rootLabel, sessionTopic, groundingContext, cache, explainMode);
   const [copied, setCopied] = useState(false);
   const [copiedDeeper, setCopiedDeeper] = useState(false);
 
@@ -179,7 +187,19 @@ function ContentArea({ node, parentContext, rootLabel, sessionTopic, groundingCo
 
       {error && !isLoading && (
         <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-4 text-red-300 text-sm">
-          {error}
+          <p>{error}</p>
+          <button
+            type="button"
+            onClick={handleReload}
+            className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
+              text-red-200/80 hover:text-red-100 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Try again
+          </button>
         </div>
       )}
 

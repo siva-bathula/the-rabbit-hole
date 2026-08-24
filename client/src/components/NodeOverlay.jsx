@@ -23,6 +23,14 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
   const [isPulling, setIsPulling] = useState(false);
   const [deeperError, setDeeperError] = useState(null);
   const [copiedDeeper, setCopiedDeeper] = useState(false);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  const handleReloadExplanation = useCallback(() => {
+    if (!node || node.followUp) return;
+    const cacheKey = modeCacheKey(node.id, explainMode);
+    explanationCache?.current?.delete(cacheKey);
+    setReloadNonce((n) => n + 1);
+  }, [node, explainMode, explanationCache]);
 
   const handleCopy = useCallback((code) => {
     navigator.clipboard.writeText(code).then(() => {
@@ -94,7 +102,7 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
     })();
 
     return () => { cancelled = true; };
-  }, [node?.id, node?.followUp, explainMode, rootTopic, sessionTopic, groundingContext]);
+  }, [node?.id, node?.followUp, explainMode, rootTopic, sessionTopic, groundingContext, reloadNonce]);
 
   const handlePullThread = useCallback(async () => {
     if (!explanation || isPulling) return;
@@ -329,7 +337,19 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
 
               {error && !isLoading && (
                 <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-4 text-red-300 text-sm">
-                  {error}
+                  <p>{error}</p>
+                  <button
+                    type="button"
+                    onClick={handleReloadExplanation}
+                    className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
+                      text-red-200/80 hover:text-red-100 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Try again
+                  </button>
                 </div>
               )}
 
