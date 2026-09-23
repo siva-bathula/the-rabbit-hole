@@ -68,9 +68,10 @@ async function completionFromDeepseek(label, pending) {
 /**
  * V4 Flash — optional thinking (see `DEEPSEEK_THINKING_ENABLED`, `deepseekThinkingChatConfig`).
  * @param {Omit<import('openai').OpenAI.ChatCompletionCreateParamsNonStreaming, 'model' | 'stream'>} params
+ * @param {{ thinking?: boolean }} [options] Pass `{ thinking: false }` for JSON chat routes where thinking + json_object often yields empty content.
  */
-export async function deepseekV4FlashChat(params) {
-  const body = isDeepseekThinkingEnabled()
+export async function deepseekV4FlashChat(params, { thinking = isDeepseekThinkingEnabled() } = {}) {
+  const body = thinking
     ? { ...omitSamplingParamsForThinkingMode(params), ...deepseekThinkingChatConfig }
     : { ...params };
   return completionFromDeepseek(
@@ -136,8 +137,15 @@ export function parseDeepseekAssistantJson(response, routeLabel = 'deepseek') {
       : '';
 
   if (!text) {
+    const finishReason = /** @type {{ finish_reason?: unknown }} */ (choices[0])?.finish_reason;
+    const finishHint =
+      finishReason === 'length'
+        ? ' (generation hit token limit — often thinking + JSON mode)'
+        : finishReason
+          ? ` (finish_reason=${String(finishReason)})`
+          : '';
     throw new Error(
-      `${prefix}completion had empty assistant content — retry or try DEEPSEEK_THINKING_ENABLED=0 if this persists`,
+      `${prefix}completion had empty assistant content${finishHint} — retry or try DEEPSEEK_THINKING_ENABLED=0 if this persists`,
     );
   }
 
@@ -891,14 +899,28 @@ Return ONLY a JSON object: { "reply": string, "offTopic": boolean }` +
     })),
   ];
 
-  const response = await deepseekV4FlashChat({
+  // Thinking + json_object is a known DeepSeek footgun (empty content). Follow-up is plain Q&A — skip thinking.
+  const chatParams = {
     messages: apiMessages,
     response_format: { type: 'json_object' },
     temperature: 0.55,
-  });
+    max_tokens: 2048,
+  };
+
+  let response = await deepseekV4FlashChat(chatParams, { thinking: false });
   recordLlmCall(1);
 
-  const data = parseDeepseekAssistantJson(response, 'followup');
+  let data;
+  try {
+    data = parseDeepseekAssistantJson(response, 'followup');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/empty assistant content/.test(msg)) throw err;
+    console.warn('[followup] empty assistant content — retrying once');
+    response = await deepseekV4FlashChat(chatParams, { thinking: false });
+    recordLlmCall(1);
+    data = parseDeepseekAssistantJson(response, 'followup');
+  }
   const reply = typeof data.reply === 'string' ? data.reply : '';
   const offTopic = Boolean(data.offTopic);
   return { reply, offTopic };
