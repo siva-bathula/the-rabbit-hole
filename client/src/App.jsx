@@ -11,6 +11,8 @@ import { useExplorationPath } from './hooks/useExplorationPath.js';
 import QuizOverlay from './components/QuizOverlay.jsx';
 import CompareMatrixOverlay from './components/CompareMatrixOverlay.jsx';
 import ContactDeveloperButton from './components/ContactDeveloperButton.jsx';
+import FeedbackBanner from './components/FeedbackBanner.jsx';
+import { useFeedbackBanner } from './hooks/useFeedbackBanner.js';
 import {
   saveLive, loadLive, clearLive,
   saveSessions, loadSessions,
@@ -738,6 +740,8 @@ export default function App() {
     graphViewRef.current?.zoomToFit?.(500, padding);
   }, [graphData.nodes.length]);
 
+  const { visible: feedbackBannerVisible, dismiss: dismissFeedbackBanner } = useFeedbackBanner();
+
   const handleNewSearch = () => {
     // Save live graph before going home
     if (graphData.nodes.length > 0) {
@@ -771,7 +775,13 @@ export default function App() {
   };
 
   return (
-    <div className={`w-full relative ${phase === 'graph' ? 'h-screen overflow-hidden' : 'min-h-screen'}`}>
+    <div
+      className={`w-full relative ${phase === 'graph' ? 'h-screen overflow-hidden' : 'min-h-screen'} ${
+        feedbackBannerVisible ? 'pt-11' : ''
+      }`}
+    >
+      <FeedbackBanner visible={feedbackBannerVisible} onDismiss={dismissFeedbackBanner} />
+
       {phase === 'search' && (
         <SearchBar
           onSearch={handleSearch}
@@ -803,9 +813,9 @@ export default function App() {
               />
 
               <div
-                className="absolute z-30 flex flex-col gap-1.5 pointer-events-auto
+                className={`absolute z-30 flex flex-col gap-1.5 pointer-events-auto
                   max-sm:top-auto max-sm:left-3 max-sm:bottom-[max(1.25rem,env(safe-area-inset-bottom,0px))]
-                  sm:top-16 sm:left-4 sm:bottom-auto"
+                  sm:left-4 sm:bottom-auto ${feedbackBannerVisible ? 'sm:top-[7.25rem]' : 'sm:top-16'}`}
               >
                 <button
                   type="button"
@@ -906,7 +916,9 @@ export default function App() {
           {/* Slow burn mode: sidebar tree + content panel */}
           {mode === 'slow' && (
             <div
-              className="absolute inset-0 pt-[90px] sm:pt-[56px]"
+              className={`absolute inset-0 ${
+                feedbackBannerVisible ? 'pt-[134px] sm:pt-[100px]' : 'pt-[90px] sm:pt-[56px]'
+              }`}
               style={{ background: '#07070f' }}
             >
               <SlowBurnView
@@ -934,9 +946,11 @@ export default function App() {
 
           {/* Top bar — floats over both modes */}
           <div
-            className="absolute top-0 left-0 right-0 z-30 pointer-events-none
+            className={`absolute left-0 right-0 z-30 pointer-events-none
               flex flex-col sm:flex-row sm:items-center sm:justify-between
-              px-4 sm:px-5 pt-2.5 pb-2 gap-1.5 sm:gap-0"
+              px-4 sm:px-5 pt-2.5 pb-2 gap-1.5 sm:gap-0 ${
+                feedbackBannerVisible ? 'top-11' : 'top-0'
+              }`}
             style={{ background: mode === 'slow' ? 'rgba(7,7,15,0.92)' : 'rgba(7,7,15,0.75)' }}
           >
             {/* Row 1 (both mobile & desktop): New Search + current topic */}

@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import ContactDeveloperButton from './ContactDeveloperButton.jsx';
 
 export function getRandomN(arr, n) {
   // Handle cases where n is greater than the array length
@@ -467,9 +466,6 @@ export default function SearchBar({
               </p>
             </div>
 
-            <div className="mt-6 flex justify-center">
-              <ContactDeveloperButton />
-            </div>
           </>
         )}
       </div>
