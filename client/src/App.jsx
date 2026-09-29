@@ -10,6 +10,7 @@ import { useGraph } from './hooks/useGraph.js';
 import { useExplorationPath } from './hooks/useExplorationPath.js';
 import QuizOverlay from './components/QuizOverlay.jsx';
 import CompareMatrixOverlay from './components/CompareMatrixOverlay.jsx';
+import ContactDeveloperButton from './components/ContactDeveloperButton.jsx';
 import {
   saveLive, loadLive, clearLive,
   saveSessions, loadSessions,
@@ -965,6 +966,8 @@ export default function App() {
 
             {/* Row 2 (mobile) / right side (desktop): Sessions + mode toggle + node count */}
             <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 pointer-events-auto">
+              <ContactDeveloperButton compact />
+
               {/* Share button */}
               <button
                 onClick={handleShare}
