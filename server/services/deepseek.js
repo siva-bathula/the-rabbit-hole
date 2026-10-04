@@ -85,11 +85,12 @@ export async function deepseekV4FlashChat(params, { thinking = isDeepseekThinkin
 }
 
 /**
- * V4 Pro + same thinking config as flash (expert deepen). If thinking is off, pass `temperature` in params.
+ * V4 Pro — optional thinking (expert / verbose). Pass `{ thinking: false }` for JSON routes.
  * @param {Omit<import('openai').OpenAI.ChatCompletionCreateParamsNonStreaming, 'model' | 'stream' | 'temperature'>} params
+ * @param {{ thinking?: boolean }} [options]
  */
-async function deepseekV4ProThinkingChat(params) {
-  const body = isDeepseekThinkingEnabled()
+async function deepseekV4ProChat(params, { thinking = isDeepseekThinkingEnabled() } = {}) {
+  const body = thinking
     ? { ...omitSamplingParamsForThinkingMode(params), ...deepseekThinkingChatConfig }
     : { ...params };
   return completionFromDeepseek(
@@ -100,6 +101,31 @@ async function deepseekV4ProThinkingChat(params) {
       stream: false,
     }),
   );
+}
+
+/** @deprecated alias */
+const deepseekV4ProThinkingChat = deepseekV4ProChat;
+
+/** Cap generation time — Firebase Hosting → Cloud Run often times out around 60s. */
+function jsonRouteMaxTokens(mode, { verbose = 4096, expert = 3072, default: def = 2048 } = {}) {
+  if (mode === 'verbose') return verbose;
+  if (mode === 'expert') return expert;
+  return def;
+}
+
+async function jsonChatWithRetry(makeCompletion, routeLabel) {
+  let response = await makeCompletion();
+  recordLlmCall(1);
+  try {
+    return parseDeepseekAssistantJson(response, routeLabel);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/empty assistant content/.test(msg)) throw err;
+    console.warn(`[${routeLabel}] empty assistant content — retrying once`);
+    response = await makeCompletion();
+    recordLlmCall(1);
+    return parseDeepseekAssistantJson(response, routeLabel);
+  }
 }
 
 /**
@@ -749,15 +775,18 @@ Be precise and specific. Every word should earn its place.`;
       },
     ],
     response_format: { type: 'json_object' },
+    max_tokens: jsonRouteMaxTokens(mode),
+    temperature: explainTemp,
   };
-  const response = useProModel
-    ? await deepseekV4ProThinkingChat(
-        isDeepseekThinkingEnabled() ? explainCommon : { ...explainCommon, temperature: explainTemp },
-      )
-    : await deepseekV4FlashChat({ ...explainCommon, temperature: explainTemp });
-  recordLlmCall(1);
-
-  return parseDeepseekAssistantJson(response, 'explain');
+  // Thinking + json_object is slow and often hits proxy timeouts (502) — skip for explain.
+  const llmOpts = { thinking: false };
+  return jsonChatWithRetry(
+    () =>
+      useProModel
+        ? deepseekV4ProChat(explainCommon, llmOpts)
+        : deepseekV4FlashChat(explainCommon, llmOpts),
+    'explain',
+  );
 }
 
 export async function deepenNode(
@@ -849,15 +878,17 @@ Be precise. Every sentence must earn its place. No filler.`;
       },
     ],
     response_format: { type: 'json_object' },
+    max_tokens: jsonRouteMaxTokens(mode, { verbose: 3072, expert: 2560, default: 1800 }),
+    temperature: deepenTemp,
   };
-  const response = useProThinking
-    ? await deepseekV4ProThinkingChat(
-        isDeepseekThinkingEnabled() ? common : { ...common, temperature: deepenTemp },
-      )
-    : await deepseekV4FlashChat({ ...common, temperature: deepenTemp });
-  recordLlmCall(1);
-
-  return parseDeepseekAssistantJson(response, 'deepen');
+  const llmOpts = { thinking: false };
+  return jsonChatWithRetry(
+    () =>
+      useProThinking
+        ? deepseekV4ProChat(common, llmOpts)
+        : deepseekV4FlashChat(common, llmOpts),
+    'deepen',
+  );
 }
 
 /**

@@ -157,29 +157,11 @@ function isLearnMoreShape(obj) {
   );
 }
 
-async function verifyExternalUrl(href) {
-  const timeout = 3500;
-  const req = (method, headers = {}) =>
-    fetch(href, {
-      method,
-      redirect: 'follow',
-      signal: AbortSignal.timeout(timeout),
-      headers,
-    });
-  try {
-    let res = await req('HEAD');
-    if (res.ok || (res.status >= 300 && res.status < 400)) return true;
-    res = await req('GET', { Range: 'bytes=0-0' });
-    return res.ok || (res.status >= 300 && res.status < 400);
-  } catch {
-    return false;
-  }
-}
-
 /**
- * Keep learnMore only when URL is https and responds successfully.
+ * Keep learnMore when URL is https and well-formed. Skip live HEAD/GET checks — they added
+ * several seconds after the LLM call and contributed to Firebase/Cloudflare 502 timeouts.
  */
-async function sanitizeLearnMore(learnMore) {
+function sanitizeLearnMore(learnMore) {
   if (!isLearnMoreShape(learnMore)) return null;
 
   let parsed;
@@ -191,9 +173,6 @@ async function sanitizeLearnMore(learnMore) {
 
   if (parsed.protocol !== 'https:') return null;
   if (!parsed.hostname || parsed.hostname.includes('..')) return null;
-
-  const ok = await verifyExternalUrl(parsed.href);
-  if (!ok) return null;
 
   return {
     title: learnMore.title.trim().slice(0, 240),
@@ -229,7 +208,7 @@ router.post('/', async (req, res) => {
       return res.status(500).json({ error: 'Invalid response from AI' });
     }
 
-    const learnMore = await sanitizeLearnMore(data.learnMore);
+    const learnMore = sanitizeLearnMore(data.learnMore);
     const payload = { ...data, wikipedia: wikipedia ?? null };
     if (learnMore) payload.learnMore = learnMore;
     else delete payload.learnMore;

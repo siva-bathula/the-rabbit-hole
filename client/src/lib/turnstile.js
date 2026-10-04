@@ -171,11 +171,31 @@ export async function getTurnstileToken(siteKey) {
   return done;
 }
 
+const GATEWAY_TIMEOUT_STATUSES = new Set([502, 503, 504]);
+
 /** Wrap fetch so sliding Turnstile session headers update sessionStorage after AI calls. */
-export async function fetchWithTurnstile(url, init) {
-  const res = await fetch(url, init);
-  captureRhTurnstileSessionFromResponse(res);
+export async function fetchWithTurnstile(url, init, { retries = 1 } = {}) {
+  let res;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    res = await fetch(url, init);
+    captureRhTurnstileSessionFromResponse(res);
+    if (!GATEWAY_TIMEOUT_STATUSES.has(res.status) || attempt >= retries) break;
+    await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+  }
   return res;
+}
+
+/** Parse JSON API bodies; gateway timeouts often return HTML instead of JSON. */
+export async function readApiJson(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (GATEWAY_TIMEOUT_STATUSES.has(res.status)) {
+      return { error: 'Server timed out — try again or switch to Normal explain mode.' };
+    }
+    return { error: 'Request failed.' };
+  }
 }
 
 /** Adds `turnstileSession` when Turnstile + session exchange are configured (amortizes widget latency). */

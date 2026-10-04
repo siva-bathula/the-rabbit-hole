@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { isPrimaryGraphRoot } from '../lib/graphRoot.js';
-import { withTurnstilePayload, fetchWithTurnstile } from '../lib/turnstile.js';
+import { withTurnstilePayload, fetchWithTurnstile, readApiJson } from '../lib/turnstile.js';
 
 const MODES = [
   { id: 'eli5', label: 'Simple' },
@@ -85,9 +85,11 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-        const data = await r.json();
+        const data = await readApiJson(r);
         if (!cancelled) {
-          if (data.error) setError(data.error);
+          if (!r.ok && !data.error) {
+            setError('Failed to load explanation.');
+          } else if (data.error) setError(data.error);
           else {
             setExplanation(data);
             explanationCache?.current?.set(cacheKey, { explanation: data, deeper: null });
