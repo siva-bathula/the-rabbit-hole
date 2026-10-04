@@ -14,6 +14,12 @@ import ContactDeveloperButton from './components/ContactDeveloperButton.jsx';
 import FeedbackBanner from './components/FeedbackBanner.jsx';
 import { useFeedbackBanner } from './hooks/useFeedbackBanner.js';
 import {
+  buildExplorationHtml,
+  downloadExplorationHtml,
+  countExploredExportNodes,
+  sessionToExportSnap,
+} from './lib/buildExplorationHtml.js';
+import {
   saveLive, loadLive, clearLive,
   saveSessions, loadSessions,
   saveMode, loadMode,
@@ -592,6 +598,37 @@ export default function App() {
     }
   }, [snapshot, currentTopic, shareId, isSharing]);
 
+  const handleExportHtml = useCallback(() => {
+    const snap = snapshot();
+    if (countExploredExportNodes(snap) === 0) {
+      window.alert('Nothing to export yet — open and read at least one node first.');
+      return;
+    }
+    const html = buildExplorationHtml({
+      topic: currentTopic,
+      rootLabel,
+      snap,
+    });
+    downloadExplorationHtml(html, currentTopic || rootLabel);
+  }, [snapshot, currentTopic, rootLabel]);
+
+  const handleExportSessionHtml = useCallback(
+    (session) => {
+      const snap = sessionToExportSnap(session);
+      if (countExploredExportNodes(snap) === 0) {
+        window.alert('This session has no explored content saved yet.');
+        return;
+      }
+      const html = buildExplorationHtml({
+        topic: session.topic,
+        rootLabel: session.rootLabel || '',
+        snap,
+      });
+      downloadExplorationHtml(html, session.displayName || session.topic);
+    },
+    [],
+  );
+
   // "Open in new exploration" from NodeOverlay — saves current, goes to search pre-filled
   const handleForkHole = useCallback((nodeTopic) => {
     if (graphData.nodes.length > 0) {
@@ -1007,6 +1044,23 @@ export default function App() {
                 <span className="hidden sm:inline">{shareCopied ? 'Copied!' : 'Share'}</span>
               </button>
 
+              <button
+                type="button"
+                onClick={handleExportHtml}
+                disabled={graphData.nodes.length === 0 || isExploring}
+                title="Download explored content as HTML"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-sm font-medium transition-all border
+                  border-yellow-400/30 text-yellow-300 hover:bg-yellow-500/10
+                  disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: 'rgba(250, 204, 21, 0.07)' }}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span className="hidden sm:inline">Export HTML</span>
+              </button>
+
               {comparisonSubjects?.length >= 2 && (
                 <button
                   type="button"
@@ -1138,6 +1192,7 @@ export default function App() {
         onDelete={deleteSession}
         onRenameSession={renameSession}
         onClearAll={handleClearAllSessions}
+        onExportHtml={handleExportSessionHtml}
       />
 
       {followUpNode && (

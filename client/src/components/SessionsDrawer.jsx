@@ -20,6 +20,7 @@ export default function SessionsDrawer({
   onDelete,
   onRenameSession,
   onClearAll,
+  onExportHtml,
 }) {
   const sortedSessions = useMemo(
     () => [...sessions].sort((a, b) => (b.lastUsedAt ?? b.createdAt ?? 0) - (a.lastUsedAt ?? a.createdAt ?? 0)),
@@ -146,6 +147,22 @@ export default function SessionsDrawer({
                       )}
                     </div>
                     <div className="flex flex-shrink-0 items-center gap-0.5">
+                      {onExportHtml && (
+                        <button
+                          type="button"
+                          title="Export as HTML"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onExportHtml(s);
+                          }}
+                          className="p-1 rounded-lg text-white/25 hover:text-amber-200 hover:bg-amber-500/15 transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                              d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        </button>
+                      )}
                       {onRenameSession && (
                         <button
                           type="button"
