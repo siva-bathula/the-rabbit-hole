@@ -24,7 +24,7 @@ LLM routes (`/api/explore`, `/api/expand`, `/api/explain`, `/api/deepen`, `/api/
 
 - **Latency / sliding session:** The SPA exchanges one Turnstile widget token for a signed **`turnstileSession`** (`POST /api/turnstile/session`). Each successful AI response returns **`X-RH-Turnstile-Session`** so the browser can **slide** expiry without running Turnstile again until **idle** or **absolute max** lifetime is hit. Env: **`TURNSTILE_SESSION_SLIDE_SEC`** (seconds added per success; defaults like **`TURNSTILE_SESSION_TTL_SEC`**, default 600), **`TURNSTILE_SESSION_IDLE_SEC`** (default 1800), **`TURNSTILE_SESSION_MAX_ABS_SEC`** (default 86400). Tokens minted before sliding shipped only contain `{ exp }` (fixed window) until re-exchange. Optional **`TURNSTILE_SESSION_SECRET`** pins HMAC signing across deploys.
 
-All **`POST /api/*`** requests in production must send an **`Origin`** header that matches `ALLOWED_ORIGINS` (comma-separated) or `http(s)://localhost:*`. That blocks naive curl/Postman; Turnstile blocks most scripted abuse that spoofs `Origin`.
+All **`POST /api/*`** requests in production must send an **`Origin`** header that matches `ALLOWED_ORIGINS` (comma-separated) or the request host (same-site). **`localhost` origins are rejected in production** — local dev uses the Vite proxy to a local API only. Turnstile blocks most scripted abuse that spoofs `Origin`.
 
 **Rate limits:** `/api/*` stays at **10 requests per minute per IP** (shared Firestore counter in production by default). Tune in `server/index.js` if needed after Turnstile is live.
 

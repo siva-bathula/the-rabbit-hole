@@ -50,38 +50,70 @@ app.use((_, res, next) => {
 
 // ── CORS ─────────────────────────────────────────────────────────────────────
 // Dev: allow the Vite dev server.
-// Production: allow only our own domain(s), configured via ALLOWED_ORIGINS env
-// var (comma-separated). Defaults to rabbitholeorg.org. Any other origin is
-// rejected — this blocks third-party sites from calling our API via the browser.
-const allowedOrigins = IS_DEV
-  ? new Set(['http://localhost:3000'])
-  : new Set(
-      (process.env.ALLOWED_ORIGINS || 'https://rabbitholeorg.org')
-        .split(',')
-        .map((o) => o.trim())
-        .filter(Boolean)
-    );
+// Production: allow our domain(s) via ALLOWED_ORIGINS (comma-separated), plus
+// Firebase Hosting defaults (*.web.app / *.firebaseapp.com from GCLOUD_PROJECT).
+// Same-site requests (Origin host matches Host) are always allowed so alternate
+// entry URLs (Firebase default domains, Cloud Run URL) work without listing every host.
+function buildProductionAllowedOrigins() {
+  const fromEnv = (process.env.ALLOWED_ORIGINS || 'https://rabbitholeorg.org,https://www.rabbitholeorg.org')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+  const projectId = String(process.env.GCLOUD_PROJECT ?? '').trim();
+  if (projectId) {
+    fromEnv.push(`https://${projectId}.web.app`, `https://${projectId}.firebaseapp.com`);
+  }
+  return new Set(fromEnv);
+}
+
+const allowedOrigins = IS_DEV ? new Set(['http://localhost:3000']) : buildProductionAllowedOrigins();
+
+/** Host the client used for this request (respects trust proxy / Firebase / Cloudflare). */
+function requestHost(req) {
+  const forwarded = req?.get?.('X-Forwarded-Host');
+  const raw = forwarded ? forwarded.split(',')[0].trim() : req?.get?.('Host') ?? '';
+  return raw.split(':')[0].toLowerCase();
+}
+
+/** Origin matches the request host — legitimate same-site browser traffic on any deploy URL. */
+function isSameSiteOrigin(origin, req) {
+  if (!req || !origin) return false;
+  try {
+    return new URL(origin).hostname.toLowerCase() === requestHost(req);
+  } catch {
+    return false;
+  }
+}
+
+/** Local dev only — production must not accept cross-origin calls from localhost. */
+function isLocalhostOrigin(origin) {
+  return /^https?:\/\/localhost(:\d+)?$/.test(origin);
+}
 
 /** Used by CORS and production POST /api origin enforcement. */
-function isAllowedBrowserOrigin(origin) {
+function isAllowedBrowserOrigin(origin, req) {
   if (!origin || typeof origin !== 'string') return false;
-  if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return true;
+  if (IS_DEV && isLocalhostOrigin(origin)) return true;
+  if (isSameSiteOrigin(origin, req)) return true;
   return allowedOrigins.has(origin);
 }
 
-app.use(
+// Pass req into origin callback (cors package does not provide it by default).
+app.use((req, res, next) => {
   cors({
-    origin: (origin, cb) => {
+    origin(origin, cb) {
       // No Origin header → same-origin browser nav or non-browser client → allow.
       if (!origin) return cb(null, true);
-      if (isAllowedBrowserOrigin(origin)) return cb(null, true);
+      if (isAllowedBrowserOrigin(origin, req)) return cb(null, true);
       // Return a plain false (not an Error) so cors sends a 403 quietly
       // without bubbling an unhandled error through Express.
       cb(null, false);
     },
     credentials: false,
-  })
-);
+    exposedHeaders: ['X-RH-Turnstile-Session'],
+    allowedHeaders: ['Content-Type', 'X-RH-Turnstile-Session', 'X-Turnstile-Token'],
+  })(req, res, next);
+});
 
 const useFirestoreRateLimitFlag = String(process.env.USE_FIRESTORE_RATE_LIMIT ?? '').trim();
 const useFirestoreRateLimit =
@@ -153,7 +185,7 @@ app.use((req, res, next) => {
   if (IS_DEV) return next();
   if (req.method !== 'POST' || !req.path.startsWith('/api')) return next();
   const origin = req.get('Origin');
-  if (!isAllowedBrowserOrigin(origin)) {
+  if (!isAllowedBrowserOrigin(origin, req)) {
     return res.status(403).json({ error: 'Forbidden' });
   }
   next();
