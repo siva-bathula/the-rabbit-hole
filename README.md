@@ -30,6 +30,42 @@ All **`POST /api/*`** requests in production must send an **`Origin`** header th
 
 **Edge:** Putting the site behind **Cloudflare** (Bot Fight Mode, rate rules) adds another layer on top of application checks.
 
+### Hide origin / block direct Cloud Run access
+
+Traffic should flow **users → Cloudflare → Firebase Hosting → Cloud Run**, not to a public `*.run.app` URL.
+
+**1. Cloud Run ingress (GCP — blocks raw `*.run.app`)**
+
+```bash
+gcloud run services update the-rabbit-hole \
+  --project=therabbithole-491011 \
+  --region=asia-south1 \
+  --ingress=internal-and-cloud-load-balancing
+```
+
+Firebase Hosting rewrites still reach the service; casual `curl https://….run.app/…` should not.
+
+**2. Edge secret (app + Cloudflare — blocks bypassing Cloudflare on your custom domain)**
+
+Generate a long random secret and set it on Cloud Run (same value everywhere):
+
+```bash
+openssl rand -hex 32
+```
+
+- **Cloud Run env:** `RH_EDGE_SECRET=<that value>`
+- **Cloudflare** → Rules → Transform Rules → **Modify Request Header** (origin request):
+  - When: `(http.host eq "rabbitholeorg.org" or http.host eq "www.rabbitholeorg.org")`
+  - Set static header: `X-RH-Edge-Secret` = same secret
+
+The server requires this header on **`/api/*`** for custom-domain hosts. Firebase default URLs (`*.web.app`, `*.firebaseapp.com`) do not use Cloudflare and are exempt. Direct `*.run.app` requests get **404**.
+
+**3. Authenticated Origin Pulls (optional, stronger)**
+
+Cloudflare can present a client certificate to the origin. With **Firebase Hosting** in front of Cloud Run, the TLS origin is Google — not your Node process — so AOP is configured on Cloudflare → Firebase, not in Express. The edge secret above is the practical fit for this stack.
+
+After deploy, verify: custom domain works in the browser; `curl https://….run.app/api/health` fails; `curl https://rabbitholeorg.org/api/trending` without the secret fails.
+
 ### Development (two terminals)
 ```bash
 # Terminal 1 — API server on :4000

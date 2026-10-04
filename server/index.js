@@ -20,6 +20,7 @@ import { startLlmMetrics } from './lib/llmMetrics.js';
 import { FirestoreRateLimitStore } from './lib/rateLimitFirestoreStore.js';
 import { resolveTurnstileSessionSignerSecret } from './lib/rhTurnstileSession.js';
 import { createRequireTurnstile } from './middleware/requireTurnstile.js';
+import { createRequireTrustedIngress, requestHost } from './middleware/requireTrustedIngress.js';
 import { createTurnstileSessionPostHandler } from './routes/turnstileSession.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -53,7 +54,7 @@ app.use((_, res, next) => {
 // Production: allow our domain(s) via ALLOWED_ORIGINS (comma-separated), plus
 // Firebase Hosting defaults (*.web.app / *.firebaseapp.com from GCLOUD_PROJECT).
 // Same-site requests (Origin host matches Host) are always allowed so alternate
-// entry URLs (Firebase default domains, Cloud Run URL) work without listing every host.
+// entry URLs (Firebase default domains) work without listing every host.
 function buildProductionAllowedOrigins() {
   const fromEnv = (process.env.ALLOWED_ORIGINS || 'https://rabbitholeorg.org,https://www.rabbitholeorg.org')
     .split(',')
@@ -68,11 +69,28 @@ function buildProductionAllowedOrigins() {
 
 const allowedOrigins = IS_DEV ? new Set(['http://localhost:3000']) : buildProductionAllowedOrigins();
 
-/** Host the client used for this request (respects trust proxy / Firebase / Cloudflare). */
-function requestHost(req) {
-  const forwarded = req?.get?.('X-Forwarded-Host');
-  const raw = forwarded ? forwarded.split(',')[0].trim() : req?.get?.('Host') ?? '';
-  return raw.split(':')[0].toLowerCase();
+/** Custom-domain hostnames (not Firebase defaults) that must arrive via Cloudflare edge secret. */
+const customDomainHosts = IS_DEV
+  ? new Set()
+  : new Set(
+      [...allowedOrigins]
+        .map((origin) => {
+          try {
+            return new URL(origin).hostname.toLowerCase();
+          } catch {
+            return '';
+          }
+        })
+        .filter(Boolean),
+    );
+
+const rhEdgeSecret = String(process.env.RH_EDGE_SECRET ?? '').trim();
+if (!IS_DEV && !rhEdgeSecret) {
+  console.warn(
+    '[ingress] RH_EDGE_SECRET is not set — custom-domain /api requests are not edge-gated. See README edge hardening.',
+  );
+} else if (!IS_DEV) {
+  console.log('[ingress] RH_EDGE_SECRET set — custom-domain /api requires X-RH-Edge-Secret from Cloudflare');
 }
 
 /** Origin matches the request host — legitimate same-site browser traffic on any deploy URL. */
@@ -114,6 +132,14 @@ app.use((req, res, next) => {
     allowedHeaders: ['Content-Type', 'X-RH-Turnstile-Session', 'X-Turnstile-Token'],
   })(req, res, next);
 });
+
+// Block direct Cloud Run URLs; custom domains must include Cloudflare-injected edge secret on /api.
+app.use(
+  createRequireTrustedIngress({
+    edgeSecret: rhEdgeSecret,
+    customDomainHosts,
+  }),
+);
 
 const useFirestoreRateLimitFlag = String(process.env.USE_FIRESTORE_RATE_LIMIT ?? '').trim();
 const useFirestoreRateLimit =
