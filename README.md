@@ -58,7 +58,9 @@ openssl rand -hex 32
   - When: `(http.host eq "rabbitholeorg.org" or http.host eq "www.rabbitholeorg.org")`
   - Set static header: `X-RH-Edge-Secret` = same secret
 
-The server requires this header on **`/api/*`** for custom-domain hosts. Firebase default URLs (`*.web.app`, `*.firebaseapp.com`) do not use Cloudflare and are exempt. Direct `*.run.app` requests get **404**.
+The server accepts **`/api/*`** on custom-domain hosts when either the secret matches **or** standard Cloudflare origin headers are present (`CF-Connecting-IP`, etc.). Firebase Hosting often forwards Cloudflare headers but may strip custom `X-RH-*` headers — the CF check keeps the site working. Firebase default URLs (`*.web.app`, `*.firebaseapp.com`) are exempt. Direct `*.run.app` requests get **404**.
+
+**Site broken with 403 on `/api`?** Remove `RH_EDGE_SECRET` from Cloud Run to restore service immediately, then redeploy after pulling the latest code.
 
 **3. Authenticated Origin Pulls (optional, stronger)**
 

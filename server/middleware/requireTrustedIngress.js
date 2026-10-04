@@ -28,6 +28,20 @@ function safeEqualStrings(a, b) {
 }
 
 /**
+ * Cloudflare adds these on proxied origin requests. Firebase Hosting usually
+ * forwards them to Cloud Run even when a custom X-RH-Edge-Secret is stripped.
+ * Not forge-proof against direct Cloud Run access — pair with *.run.app blocking.
+ */
+export function hasCloudflareOriginHeaders(req) {
+  return !!(
+    req.get('CF-Connecting-IP') ||
+    req.get('CF-IPCountry') ||
+    req.get('CF-Visitor') ||
+    req.get('True-Client-IP')
+  );
+}
+
+/**
  * Production ingress hardening:
  * - Reject direct Cloud Run URLs (*.run.app) — pair with Cloud Run ingress settings in GCP.
  * - Custom domains (e.g. rabbitholeorg.org) require X-RH-Edge-Secret from Cloudflare.
@@ -56,7 +70,9 @@ export function createRequireTrustedIngress({ edgeSecret, customDomainHosts }) {
       !isFirebaseHostingHost(host)
     ) {
       const provided = req.get('X-RH-Edge-Secret')?.trim() ?? '';
-      if (!safeEqualStrings(provided, secret)) {
+      const secretOk = safeEqualStrings(provided, secret);
+      const cloudflareOk = hasCloudflareOriginHeaders(req);
+      if (!secretOk && !cloudflareOk) {
         return res.status(403).json({ error: 'Forbidden' });
       }
     }
