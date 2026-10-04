@@ -107,25 +107,98 @@ async function deepseekV4ProChat(params, { thinking = isDeepseekThinkingEnabled(
 const deepseekV4ProThinkingChat = deepseekV4ProChat;
 
 /** Cap generation time — Firebase Hosting → Cloud Run often times out around 60s. */
-function jsonRouteMaxTokens(mode, { verbose = 4096, expert = 3072, default: def = 2048 } = {}) {
+function jsonRouteMaxTokens(mode, { verbose = 4608, expert = 3584, default: def = 2560 } = {}) {
   if (mode === 'verbose') return verbose;
   if (mode === 'expert') return expert;
   return def;
 }
 
-async function jsonChatWithRetry(makeCompletion, routeLabel) {
-  let response = await makeCompletion();
-  recordLlmCall(1);
-  try {
-    return parseDeepseekAssistantJson(response, routeLabel);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!/empty assistant content/.test(msg)) throw err;
-    console.warn(`[${routeLabel}] empty assistant content — retrying once`);
-    response = await makeCompletion();
-    recordLlmCall(1);
-    return parseDeepseekAssistantJson(response, routeLabel);
+const JSON_OUTPUT_RULES = `
+JSON OUTPUT (strict):
+- Return ONE raw JSON object only — no markdown fences, no prose before/after.
+- Escape double quotes inside strings as \\".
+- Do not put literal line breaks inside JSON strings; use spaces instead.
+- Keep string values concise so the full object fits without truncation.`;
+
+function stripAssistantJsonWrapper(text) {
+  let s = text.trim();
+  const fenced = s.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fenced) s = fenced[1].trim();
+  const start = s.indexOf('{');
+  if (start < 0) return s;
+  const end = s.lastIndexOf('}');
+  if (end > start) return s.slice(start, end + 1);
+  return s.slice(start);
+}
+
+/** Best-effort close for truncated JSON (token limit mid-string). */
+function closeTruncatedJsonObject(raw) {
+  let out = raw.trimEnd();
+  out = out.replace(/,\s*"[^"]*"\s*:\s*"[^"]*$/s, '');
+  out = out.replace(/,\s*"[^"]*"\s*:\s*(\[[^\]]*)?$/s, '');
+  out = out.replace(/,\s*$/, '');
+
+  const stack = [];
+  let inString = false;
+  let escape = false;
+  for (const ch of out) {
+    if (inString) {
+      if (escape) escape = false;
+      else if (ch === '\\') escape = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') stack.push('}');
+    else if (ch === '[') stack.push(']');
+    else if (ch === '}' || ch === ']') stack.pop();
   }
+  if (inString) out += '"';
+  while (stack.length) out += stack.pop();
+  return out;
+}
+
+function parseModelJsonText(text, routeLabel) {
+  const candidates = [
+    text.trim(),
+    stripAssistantJsonWrapper(text),
+    closeTruncatedJsonObject(stripAssistantJsonWrapper(text)),
+  ];
+  const seen = new Set();
+  let lastErr = null;
+  for (const cand of candidates) {
+    if (!cand || seen.has(cand)) continue;
+    seen.add(cand);
+    try {
+      return JSON.parse(cand);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  const msg = lastErr instanceof Error ? lastErr.message : String(lastErr);
+  throw new Error(`[${routeLabel}] model reply was not valid JSON: ${msg}`);
+}
+
+function isRetryableJsonCompletionError(msg) {
+  return /empty assistant content|not valid JSON|Unterminated string|Unexpected end of JSON/.test(msg);
+}
+
+/** @param {(attempt: number) => Promise<unknown>} makeCompletion */
+async function jsonChatWithRetry(makeCompletion, routeLabel) {
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const response = await makeCompletion(attempt);
+    recordLlmCall(1);
+    try {
+      return parseDeepseekAssistantJson(response, routeLabel);
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      if (attempt === 1 || !isRetryableJsonCompletionError(msg)) throw err;
+      console.warn(`[${routeLabel}] ${msg} — retrying once`);
+    }
+  }
+  throw lastErr;
 }
 
 /**
@@ -175,12 +248,7 @@ export function parseDeepseekAssistantJson(response, routeLabel = 'deepseek') {
     );
   }
 
-  try {
-    return JSON.parse(text);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`${prefix}model reply was not valid JSON: ${msg}`);
-  }
+  return parseModelJsonText(text, routeLabel);
 }
 
 const geminiClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -361,6 +429,7 @@ function isNewsAnchoredTopic(topic) {
 
 /** Shared guidance to cut repetition, vague filler, and over-precise hallucinations (explain / deepen). */
 const EXPLAIN_CLARITY_RULES = `
+${JSON_OUTPUT_RULES}
 
 CLARITY AND HONESTY:
 - Each "details" bullet must add a distinct idea; do not restate the summary, do not echo the node title as empty filler, and do not pad with generic platitudes.
@@ -370,6 +439,7 @@ CLARITY AND HONESTY:
 - Do not reuse the same metaphor or catchphrase across summary, details, and keyTakeaway.`;
 
 const DEEPEN_CLARITY_RULES = `
+${JSON_OUTPUT_RULES}
 
 CLARITY AND HONESTY:
 - Each advancedInsights string must be a distinct, non-obvious point; do not paraphrase the user's summary above and do not repeat basic definitions already implied by the topic.
@@ -780,13 +850,15 @@ Be precise and specific. Every word should earn its place.`;
   };
   // Thinking + json_object is slow and often hits proxy timeouts (502) — skip for explain.
   const llmOpts = { thinking: false };
-  return jsonChatWithRetry(
-    () =>
-      useProModel
-        ? deepseekV4ProChat(explainCommon, llmOpts)
-        : deepseekV4FlashChat(explainCommon, llmOpts),
-    'explain',
-  );
+  return jsonChatWithRetry((attempt) => {
+    const body = {
+      ...explainCommon,
+      max_tokens: jsonRouteMaxTokens(mode) + (attempt > 0 ? 1024 : 0),
+    };
+    return useProModel
+      ? deepseekV4ProChat(body, llmOpts)
+      : deepseekV4FlashChat(body, llmOpts);
+  }, 'explain');
 }
 
 export async function deepenNode(
@@ -882,13 +954,17 @@ Be precise. Every sentence must earn its place. No filler.`;
     temperature: deepenTemp,
   };
   const llmOpts = { thinking: false };
-  return jsonChatWithRetry(
-    () =>
-      useProThinking
-        ? deepseekV4ProChat(common, llmOpts)
-        : deepseekV4FlashChat(common, llmOpts),
-    'deepen',
-  );
+  return jsonChatWithRetry((attempt) => {
+    const body = {
+      ...common,
+      max_tokens:
+        jsonRouteMaxTokens(mode, { verbose: 3072, expert: 2560, default: 1800 }) +
+        (attempt > 0 ? 768 : 0),
+    };
+    return useProThinking
+      ? deepseekV4ProChat(body, llmOpts)
+      : deepseekV4FlashChat(body, llmOpts);
+  }, 'deepen');
 }
 
 /**
