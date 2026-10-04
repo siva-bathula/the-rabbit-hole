@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { isPrimaryGraphRoot } from '../lib/graphRoot.js';
 import { withTurnstilePayload, fetchWithTurnstile, readApiJson } from '../lib/turnstile.js';
+import RegenerateExplanationButton from './RegenerateExplanationButton.jsx';
 
 const MODES = [
   { id: 'eli5', label: 'Simple' },
@@ -303,6 +304,12 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
                 </div>
                 {isLoading && explainMode !== 'normal' && (
                   <div className="w-3 h-3 rounded-full border border-purple-400/30 border-t-purple-400 animate-spin" />
+                )}
+                {(explanation || (isLoading && reloadNonce > 0)) && (
+                  <RegenerateExplanationButton
+                    onClick={handleReloadExplanation}
+                    disabled={isLoading}
+                  />
                 )}
               </div>
             </div>

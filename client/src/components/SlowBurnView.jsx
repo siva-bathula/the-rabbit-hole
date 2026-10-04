@@ -3,6 +3,7 @@ import FolderTree from './FolderTree.jsx';
 import { useSlowBurn } from '../hooks/useSlowBurn.js';
 import { graphPrimaryRootId } from '../lib/graphRoot.js';
 import { withTurnstilePayload, fetchWithTurnstile, readApiJson } from '../lib/turnstile.js';
+import RegenerateExplanationButton from './RegenerateExplanationButton.jsx';
 
 const MODES = [
   { id: 'eli5', label: 'Simple' },
@@ -130,11 +131,31 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
     }
   }, [explanation, isPulling, node, parentContext, rootLabel, sessionTopic, groundingContext, mode, cache]);
 
-  return { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread, handleReload };
+  return {
+    explanation,
+    isLoading,
+    error,
+    deeperContent,
+    isPulling,
+    deeperError,
+    handlePullThread,
+    handleReload,
+    reloadNonce,
+  };
 }
 
 function ContentArea({ node, parentContext, rootLabel, sessionTopic, groundingContext, cache, onExplore, onQuizMe, explainMode = 'normal', onExplainModeChange }) {
-  const { explanation, isLoading, error, deeperContent, isPulling, deeperError, handlePullThread, handleReload } = useNodeExplanation(node, parentContext, rootLabel, sessionTopic, groundingContext, cache, explainMode);
+  const {
+    explanation,
+    isLoading,
+    error,
+    deeperContent,
+    isPulling,
+    deeperError,
+    handlePullThread,
+    handleReload,
+    reloadNonce,
+  } = useNodeExplanation(node, parentContext, rootLabel, sessionTopic, groundingContext, cache, explainMode);
   const [copied, setCopied] = useState(false);
   const [copiedDeeper, setCopiedDeeper] = useState(false);
 
@@ -176,6 +197,9 @@ function ContentArea({ node, parentContext, rootLabel, sessionTopic, groundingCo
           </div>
           {isLoading && (
             <div className="w-3 h-3 rounded-full border border-purple-400/30 border-t-purple-400 animate-spin" />
+          )}
+          {(explanation || (isLoading && reloadNonce > 0)) && (
+            <RegenerateExplanationButton onClick={handleReload} disabled={isLoading} />
           )}
         </div>
       </div>
