@@ -256,11 +256,8 @@ export default function SearchBar({
             <h1 className="text-5xl font-black text-white mb-3 tracking-tight">
               The Rabbit Hole
             </h1>
-            <p className="text-white/45 text-base mb-2 leading-relaxed max-w-md mx-auto">
-              Ask a question or name a topic — whatever you&apos;re curious about.
-            </p>
-            <p className="text-white/30 text-sm mb-10 leading-relaxed max-w-md mx-auto">
-              AI maps the ideas around it into an interactive graph. Click any node and keep going.
+            <p className="text-white/40 text-[0.9375rem] sm:text-base mb-10 leading-snug max-w-[19rem] sm:max-w-md mx-auto text-balance">
+              Ask a question or pick a topic — AI builds a clickable map of ideas.
             </p>
 
             {/* Search form */}
