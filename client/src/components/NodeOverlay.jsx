@@ -1,15 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { isPrimaryGraphRoot } from '../lib/graphRoot.js';
 import { withTurnstilePayload, fetchWithTurnstile, readApiJson } from '../lib/turnstile.js';
-import RegenerateExplanationButton from './RegenerateExplanationButton.jsx';
-
-const MODES = [
-  { id: 'eli5', label: 'Simple' },
-  { id: 'layman', label: 'Layman' },
-  { id: 'normal', label: 'Normal' },
-  { id: 'expert', label: 'Expert' },
-  { id: 'verbose', label: 'Verbose' },
-];
+import ExplainDepthControls from './ExplainDepthControls.jsx';
 
 function modeCacheKey(nodeId, mode) {
   return mode === 'normal' ? nodeId : `${nodeId}::${mode}`;
@@ -284,34 +276,14 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
                 </button>
               </div>
 
-              {/* Explain depth toggle */}
-              <div className="flex flex-wrap items-center gap-2 mt-3 min-w-0">
-                <span className="text-white/30 text-xs flex-shrink-0">Depth:</span>
-                <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg flex-shrink-0" style={{ background: 'rgba(255,255,255,0.07)' }}>
-                  {MODES.map(({ id, label }) => (
-                    <button
-                      key={id}
-                      onClick={() => onExplainModeChange?.(id)}
-                      className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
-                        explainMode === id
-                          ? 'bg-purple-600 text-white shadow-sm'
-                          : 'text-white/40 hover:text-white/70'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                {isLoading && explainMode !== 'normal' && (
-                  <div className="w-3 h-3 rounded-full border border-purple-400/30 border-t-purple-400 animate-spin" />
-                )}
-                {(explanation || (isLoading && reloadNonce > 0)) && (
-                  <RegenerateExplanationButton
-                    onClick={handleReloadExplanation}
-                    disabled={isLoading}
-                  />
-                )}
-              </div>
+              <ExplainDepthControls
+                explainMode={explainMode}
+                onExplainModeChange={onExplainModeChange}
+                showRegenerate={Boolean(explanation || (isLoading && reloadNonce > 0))}
+                onRegenerate={handleReloadExplanation}
+                isLoading={isLoading}
+                headerSpinner={isLoading && explainMode !== 'normal'}
+              />
             </div>
 
             {/* Go Deeper progress banner */}
