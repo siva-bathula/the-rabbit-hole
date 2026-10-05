@@ -16,6 +16,22 @@ export function getRandomN(arr, n) {
   return shuffled.slice(-size);
 }
 
+/** Typewriter placeholder — mix of questions and topics so both feel natural. */
+const PLACEHOLDER_SUGGESTIONS = [
+  'Why is the sky blue?',
+  'How does CRISPR actually work?',
+  'What caused the 2008 financial crisis?',
+  'Quantum Mechanics',
+  'Why do we forget dreams?',
+  'Artificial Intelligence',
+  'What is consciousness?',
+  'Behavioral Economics',
+  'How do black holes form?',
+  'Stoicism',
+  'Why does music give us chills?',
+  'Game Theory',
+];
+
 export const STATIC_TOPICS = [
   'Macroeconomics',
   'Quantum Mechanics',
@@ -118,14 +134,14 @@ export default function SearchBar({
     let pauseCount = 0;
 
     const type = () => {
-      const currentSuggestion = STATIC_TOPICS[suggestionIndexRef.current];
+      const currentSuggestion = PLACEHOLDER_SUGGESTIONS[suggestionIndexRef.current];
       if (isDeleting) {
         const text = currentSuggestion.slice(0, charIndex);
         if (inputRef.current) inputRef.current.placeholder = text;
         charIndex--;
         if (charIndex < 0) {
           isDeleting = false;
-          suggestionIndexRef.current = (suggestionIndexRef.current + 1) % STATIC_TOPICS.length;
+          suggestionIndexRef.current = (suggestionIndexRef.current + 1) % PLACEHOLDER_SUGGESTIONS.length;
           charIndex = 0;
           typingRef.current = setTimeout(type, 400);
           return;
@@ -240,8 +256,11 @@ export default function SearchBar({
             <h1 className="text-5xl font-black text-white mb-3 tracking-tight">
               The Rabbit Hole
             </h1>
-            <p className="text-white/40 text-base mb-10 leading-relaxed">
-              Enter any topic and explore the infinite web of ideas beneath it.
+            <p className="text-white/45 text-base mb-2 leading-relaxed max-w-md mx-auto">
+              Ask a question or name a topic — whatever you&apos;re curious about.
+            </p>
+            <p className="text-white/30 text-sm mb-10 leading-relaxed max-w-md mx-auto">
+              AI maps the ideas around it into an interactive graph. Click any node and keep going.
             </p>
 
             {/* Search form */}
@@ -251,7 +270,7 @@ export default function SearchBar({
                 type="text"
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
-                placeholder="Try anything…"
+                placeholder="Ask a question or enter a topic…"
                 autoFocus
                 className="w-full px-5 py-4 pr-14 rounded-2xl text-white text-base font-medium
                   placeholder-white/25 outline-none transition-all"
