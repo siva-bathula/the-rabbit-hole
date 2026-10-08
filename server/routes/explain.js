@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { explainNode } from '../services/deepseek.js';
+import { sendRouteError } from '../lib/contentSafety.js';
 
 const router = Router();
 
@@ -215,8 +216,7 @@ router.post('/', async (req, res) => {
 
     res.json(payload);
   } catch (err) {
-    console.error('[explain]', err.message);
-    res.status(500).json({ error: 'Failed to explain node' });
+    sendRouteError(res, err, 'explain', 'Failed to explain node');
   }
 });
 

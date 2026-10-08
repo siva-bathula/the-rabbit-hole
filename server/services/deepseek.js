@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { isExploreDebug } from '../lib/exploreDebugLog.js';
+import { ContentSafetyError, throwIfSafetyPayload } from '../lib/contentSafety.js';
 import { recordLlmCall } from '../lib/llmMetrics.js';
 
 const client = new OpenAI({
@@ -295,9 +296,7 @@ function isGeminiGraphGuardrailRefusal(err) {
 }
 
 function makeGeminiGraphGuardrailRefusal(message) {
-  const e = new Error(typeof message === 'string' ? message : 'Content safety refusal');
-  e.name = 'GeminiGraphGuardrailRefusal';
-  return e;
+  return new ContentSafetyError(typeof message === 'string' ? message : 'Content safety refusal');
 }
 
 function markGeminiGraphFailed(err) {
@@ -850,7 +849,7 @@ Be precise and specific. Every word should earn its place.`;
   };
   // Thinking + json_object is slow and often hits proxy timeouts (502) — skip for explain.
   const llmOpts = { thinking: false };
-  return jsonChatWithRetry((attempt) => {
+  const data = await jsonChatWithRetry((attempt) => {
     const body = {
       ...explainCommon,
       max_tokens: jsonRouteMaxTokens(mode) + (attempt > 0 ? 1024 : 0),
@@ -859,6 +858,8 @@ Be precise and specific. Every word should earn its place.`;
       ? deepseekV4ProChat(body, llmOpts)
       : deepseekV4FlashChat(body, llmOpts);
   }, 'explain');
+  throwIfSafetyPayload(data);
+  return data;
 }
 
 export async function deepenNode(
@@ -954,7 +955,7 @@ Be precise. Every sentence must earn its place. No filler.`;
     temperature: deepenTemp,
   };
   const llmOpts = { thinking: false };
-  return jsonChatWithRetry((attempt) => {
+  const data = await jsonChatWithRetry((attempt) => {
     const body = {
       ...common,
       max_tokens:
@@ -965,6 +966,8 @@ Be precise. Every sentence must earn its place. No filler.`;
       ? deepseekV4ProChat(body, llmOpts)
       : deepseekV4FlashChat(body, llmOpts);
   }, 'deepen');
+  throwIfSafetyPayload(data);
+  return data;
 }
 
 /**
@@ -1028,6 +1031,7 @@ Return ONLY a JSON object: { "reply": string, "offTopic": boolean }` +
     recordLlmCall(1);
     data = parseDeepseekAssistantJson(response, 'followup');
   }
+  throwIfSafetyPayload(data);
   const reply = typeof data.reply === 'string' ? data.reply : '';
   const offTopic = Boolean(data.offTopic);
   return { reply, offTopic };
@@ -1192,6 +1196,7 @@ Rules:
   recordLlmCall(1);
 
   const data = parseDeepseekAssistantJson(response, 'compare');
+  throwIfSafetyPayload(data);
   const summary = typeof data.summary === 'string' ? data.summary : '';
   let columns = Array.isArray(data.columns) ? data.columns : [];
   if (columns.length !== subjects.length) {

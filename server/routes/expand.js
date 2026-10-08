@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { expandNode } from '../services/deepseek.js';
+import { sendRouteError } from '../lib/contentSafety.js';
 
 const router = Router();
 
@@ -26,8 +27,7 @@ router.post('/', async (req, res) => {
 
     res.json(data);
   } catch (err) {
-    console.error('[expand]', err.message);
-    res.status(500).json({ error: 'Failed to expand node' });
+    sendRouteError(res, err, 'expand', 'Failed to expand node');
   }
 });
 

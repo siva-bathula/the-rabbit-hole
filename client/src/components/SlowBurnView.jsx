@@ -3,7 +3,9 @@ import FolderTree from './FolderTree.jsx';
 import { useSlowBurn } from '../hooks/useSlowBurn.js';
 import { graphPrimaryRootId } from '../lib/graphRoot.js';
 import { withTurnstilePayload, fetchWithTurnstile, readApiJson } from '../lib/turnstile.js';
+import { errorKindFromPayload } from '../lib/apiErrors.js';
 import ExplainDepthControls from './ExplainDepthControls.jsx';
+import RequestNotice from './RequestNotice.jsx';
 
 function modeCacheKey(nodeId, mode) {
   return mode === 'normal' ? nodeId : `${nodeId}::${mode}`;
@@ -13,9 +15,11 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
   const [explanation, setExplanation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [errorKind, setErrorKind] = useState('error');
   const [deeperContent, setDeeperContent] = useState(null);
   const [isPulling, setIsPulling] = useState(false);
   const [deeperError, setDeeperError] = useState(null);
+  const [deeperErrorKind, setDeeperErrorKind] = useState('error');
   const [reloadNonce, setReloadNonce] = useState(0);
 
   const handleReload = useCallback(() => {
@@ -32,6 +36,7 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
 
     setDeeperContent(null);
     setDeeperError(null);
+    setDeeperErrorKind('error');
     setIsPulling(false);
 
     // Serve from per-mode cache if available
@@ -40,6 +45,7 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
       setExplanation(cached.explanation ?? cached);
       setDeeperContent(cached.deeper ?? null);
       setError(null);
+      setErrorKind('error');
       setIsLoading(false);
       return;
     }
@@ -47,6 +53,7 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
     let cancelled = false;
     setExplanation(null);
     setError(null);
+    setErrorKind('error');
     setIsLoading(true);
 
     (async () => {
@@ -68,14 +75,20 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
         if (!cancelled) {
           if (!r.ok && !data.error) {
             setError('Failed to load explanation.');
-          } else if (data.error) setError(data.error);
-          else {
+            setErrorKind('error');
+          } else if (data.error) {
+            setError(data.error);
+            setErrorKind(errorKindFromPayload(data));
+          } else {
             setExplanation(data);
             cache?.current?.set(cacheKey, { explanation: data, deeper: null });
           }
         }
       } catch {
-        if (!cancelled) setError('Failed to load explanation.');
+        if (!cancelled) {
+          setError('Failed to load explanation.');
+          setErrorKind('error');
+        }
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -90,6 +103,7 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
     if (!explanation || isPulling) return;
     setIsPulling(true);
     setDeeperError(null);
+    setDeeperErrorKind('error');
     const cacheKey = modeCacheKey(node.id, mode);
     try {
       const body = await withTurnstilePayload({
@@ -109,6 +123,7 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
       const data = await res.json();
       if (data.error) {
         setDeeperError(data.error);
+        setDeeperErrorKind(errorKindFromPayload(data));
       } else {
         setDeeperContent(data);
         const entry = cache?.current?.get(cacheKey);
@@ -118,6 +133,7 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
       }
     } catch {
       setDeeperError('Failed to pull deeper content.');
+      setDeeperErrorKind('error');
     } finally {
       setIsPulling(false);
     }
@@ -127,9 +143,11 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
     explanation,
     isLoading,
     error,
+    errorKind,
     deeperContent,
     isPulling,
     deeperError,
+    deeperErrorKind,
     handlePullThread,
     handleReload,
     reloadNonce,
@@ -141,9 +159,11 @@ function ContentArea({ node, parentContext, rootLabel, sessionTopic, groundingCo
     explanation,
     isLoading,
     error,
+    errorKind,
     deeperContent,
     isPulling,
     deeperError,
+    deeperErrorKind,
     handlePullThread,
     handleReload,
     reloadNonce,
@@ -188,21 +208,7 @@ function ContentArea({ node, parentContext, rootLabel, sessionTopic, groundingCo
       )}
 
       {error && !isLoading && (
-        <div className="rounded-xl bg-red-500/10 border border-red-500/20 p-4 text-red-300 text-sm">
-          <p>{error}</p>
-          <button
-            type="button"
-            onClick={handleReload}
-            className="mt-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors
-              text-red-200/80 hover:text-red-100 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Try again
-          </button>
-        </div>
+        <RequestNotice kind={errorKind} message={error} onRetry={handleReload} />
       )}
 
       {explanation && !isLoading && (
@@ -390,7 +396,11 @@ function ContentArea({ node, parentContext, rootLabel, sessionTopic, groundingCo
                 )}
               </button>
               {deeperError && (
-                <p className="text-red-400/70 text-xs mt-2 text-center">{deeperError}</p>
+                <RequestNotice
+                  kind={deeperErrorKind}
+                  message={deeperError}
+                  className="text-xs mt-2"
+                />
               )}
             </div>
           )}

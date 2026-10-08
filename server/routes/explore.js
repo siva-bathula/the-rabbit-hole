@@ -13,6 +13,7 @@ import {
   mergeArticleIntoGrounding,
   isSafeHttpUrlForServerFetch,
 } from '../services/articleFetch.js';
+import { respondIfGraphSafetyPayload, sendRouteError } from '../lib/contentSafety.js';
 
 const router = Router();
 
@@ -114,7 +115,8 @@ router.post('/', async (req, res) => {
       );
 
       for (const raw of graphs) {
-        if (!raw.nodes || !raw.edges || typeof raw.error === 'string') {
+        if (respondIfGraphSafetyPayload(res, raw)) return;
+        if (!raw.nodes || !raw.edges) {
           if (isExploreDebug()) {
             console.error('[explore-debug] /api/explore comparison: invalid subgraph', {
               topicPreview: topicTrim.slice(0, 120),
@@ -158,6 +160,8 @@ router.post('/', async (req, res) => {
       groundingContext: effectiveGrounding,
     });
 
+    if (respondIfGraphSafetyPayload(res, raw)) return;
+
     if (!raw.nodes || !raw.edges) {
       if (isExploreDebug()) {
         console.error('[explore-debug] /api/explore: rejecting response — missing nodes or edges (point 3)', {
@@ -174,7 +178,6 @@ router.post('/', async (req, res) => {
     const data = sanitizeGraph(raw);
     res.json({ ...data, groundingContext: effectiveGrounding });
   } catch (err) {
-    console.error('[explore]', err.message);
     if (isExploreDebug()) {
       console.error('[explore-debug] /api/explore: caught error (often JSON.parse or API)', {
         message: err?.message,
@@ -182,7 +185,7 @@ router.post('/', async (req, res) => {
         stack: err?.stack,
       });
     }
-    res.status(500).json({ error: 'Failed to generate knowledge graph' });
+    sendRouteError(res, err, 'explore', 'Failed to generate knowledge graph');
   }
 });
 

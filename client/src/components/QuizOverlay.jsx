@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { withTurnstilePayload, fetchWithTurnstile } from '../lib/turnstile.js';
+import { apiErrorFromPayload, errorKindFromError } from '../lib/apiErrors.js';
+import RequestNotice from './RequestNotice.jsx';
 
 const OPTION_LABELS = ['A', 'B', 'C', 'D'];
 
@@ -236,6 +238,7 @@ export default function QuizOverlay({ node, explanation, rootTopic, onClose }) {
   const [userAnswers, setUserAnswers] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [error, setError] = useState(null);
+  const [errorKind, setErrorKind] = useState('error');
 
   // Load or fetch quiz on mount
   useEffect(() => {
@@ -258,7 +261,7 @@ export default function QuizOverlay({ node, explanation, rootTopic, onClose }) {
           body: JSON.stringify(body),
         });
         const data = await r.json();
-        if (data.error) throw new Error(data.error);
+        if (!r.ok || data.error) throw apiErrorFromPayload(data, 'Failed to generate quiz');
         const qs = data.questions;
         setQuestions(qs);
         setUserAnswers([]);
@@ -267,6 +270,7 @@ export default function QuizOverlay({ node, explanation, rootTopic, onClose }) {
         setPhase('question');
       } catch (err) {
         setError(err.message || 'Failed to generate quiz');
+        setErrorKind(errorKindFromError(err));
         setPhase('error');
       }
     })();
@@ -312,7 +316,7 @@ export default function QuizOverlay({ node, explanation, rootTopic, onClose }) {
           body: JSON.stringify(body),
         });
         const data = await r.json();
-        if (data.error) throw new Error(data.error);
+        if (!r.ok || data.error) throw apiErrorFromPayload(data, 'Failed to generate quiz');
         const qs = data.questions;
         setQuestions(qs);
         setUserAnswers([]);
@@ -321,6 +325,7 @@ export default function QuizOverlay({ node, explanation, rootTopic, onClose }) {
         setPhase('question');
       } catch (err) {
         setError(err.message || 'Failed to generate quiz');
+        setErrorKind(errorKindFromError(err));
         setPhase('error');
       }
     })();
@@ -375,9 +380,13 @@ export default function QuizOverlay({ node, explanation, rootTopic, onClose }) {
               )}
 
               {phase === 'error' && (
-                <div className="px-6 py-10 text-center space-y-3">
-                  <p className="text-red-300 text-sm">{error}</p>
-                  <button onClick={onClose} className="text-white/50 hover:text-white text-sm underline">
+                <div className="px-6 py-10 space-y-4">
+                  <RequestNotice kind={errorKind} message={error} onRetry={handleRetake} />
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="block mx-auto text-white/50 hover:text-white text-sm underline"
+                  >
                     Close
                   </button>
                 </div>

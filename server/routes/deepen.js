@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { deepenNode } from '../services/deepseek.js';
+import { sendRouteError } from '../lib/contentSafety.js';
 
 const router = Router();
 
@@ -27,8 +28,7 @@ router.post('/', async (req, res) => {
 
     res.json(data);
   } catch (err) {
-    console.error('[deepen]', err.message);
-    res.status(500).json({ error: 'Failed to deepen explanation' });
+    sendRouteError(res, err, 'deepen', 'Failed to deepen explanation');
   }
 });
 

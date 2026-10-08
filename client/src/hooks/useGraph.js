@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { graphPrimaryRootId } from '../lib/graphRoot.js';
 import { withTurnstilePayload, fetchWithTurnstile } from '../lib/turnstile.js';
+import { apiErrorFromPayload } from '../lib/apiErrors.js';
 
 function buildOutgoingAdj(links) {
   const m = new Map();
@@ -59,6 +60,7 @@ export function useGraph() {
   const [selectedNode, setSelectedNode] = useState(null);
   const [isExploring, setIsExploring] = useState(false);
   const [error, setError] = useState(null);
+  const [errorCode, setErrorCode] = useState(null);
   const [rootLabel, setRootLabel] = useState('');
   const [comparisonSubjects, setComparisonSubjects] = useState(null);
   const [comparisonAlignment, setComparisonAlignment] = useState(null);
@@ -88,6 +90,7 @@ export function useGraph() {
 
     setIsExploring(true);
     setError(null);
+    setErrorCode(null);
     setSelectedNode(null);
     setExpandedNodes(new Set());
     // Clear graph immediately so Graph.jsx resets its seeded flag
@@ -116,8 +119,8 @@ export function useGraph() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error((await res.json()).error || 'Server error');
       const data = await res.json();
+      if (!res.ok) throw apiErrorFromPayload(data, 'Server error');
 
       if (typeof data.groundingContext === 'string') {
         groundingContextRef.current = data.groundingContext;
@@ -174,6 +177,7 @@ export function useGraph() {
       };
     } catch (err) {
       setError(err.message);
+      setErrorCode(err.code || null);
       return null;
     } finally {
       setIsExploring(false);
@@ -187,6 +191,7 @@ export function useGraph() {
 
       setExpandingNodeId(node.id);
       setError(null);
+      setErrorCode(null);
 
       try {
         // Use the node's actual parent label for context, not always root
@@ -209,8 +214,9 @@ export function useGraph() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(expandBody),
           });
-          if (!res.ok) throw new Error((await res.json()).error || 'Server error');
-          data = await res.json();
+          const parsed = await res.json();
+          if (!res.ok) throw apiErrorFromPayload(parsed, 'Server error');
+          data = parsed;
           expandDataCacheRef.current.set(node.id, data);
         }
 
@@ -270,6 +276,7 @@ export function useGraph() {
         setSelectedNode(null);
       } catch (err) {
         setError(err.message);
+        setErrorCode(err.code || null);
       } finally {
         setExpandingNodeId(null);
       }
@@ -346,6 +353,12 @@ export function useGraph() {
     setSelectedNode(null);
     setExpandingNodeId(null);
     setError(null);
+    setErrorCode(null);
+  }, []);
+
+  const clearError = useCallback(() => {
+    setError(null);
+    setErrorCode(null);
   }, []);
 
   const reset = useCallback(() => {
@@ -354,6 +367,7 @@ export function useGraph() {
     setSelectedNode(null);
     setExpandingNodeId(null);
     setError(null);
+    setErrorCode(null);
     setRootLabel('');
     nodesRef.current = [];
     linksRef.current = [];
@@ -430,6 +444,8 @@ export function useGraph() {
     setSelectedNode,
     isExploring,
     error,
+    errorCode,
+    clearError,
     rootLabel,
     groundingContext: groundingContextRef.current,
     explore,

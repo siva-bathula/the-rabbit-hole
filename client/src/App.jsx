@@ -12,7 +12,9 @@ import QuizOverlay from './components/QuizOverlay.jsx';
 import CompareMatrixOverlay from './components/CompareMatrixOverlay.jsx';
 import ContactDeveloperButton from './components/ContactDeveloperButton.jsx';
 import FeedbackBanner from './components/FeedbackBanner.jsx';
+import RequestNotice from './components/RequestNotice.jsx';
 import { useFeedbackBanner } from './hooks/useFeedbackBanner.js';
+import { errorKindFromError } from './lib/apiErrors.js';
 import {
   buildExplorationHtml,
   downloadExplorationHtml,
@@ -241,6 +243,8 @@ export default function App() {
     setSelectedNode,
     isExploring,
     error,
+    errorCode,
+    clearError,
     rootLabel,
     groundingContext,
     explore,
@@ -676,10 +680,11 @@ export default function App() {
       setActiveSessionId(null);
       setShareId(null);
       resetSessionPath();
-      explore(trimmed).then(() => {
+      explore(trimmed).then((result) => {
+        if (!result) return;
         bumpGraphEpoch();
+        setPhase('graph');
       });
-      setPhase('graph');
     },
     [explore, resetSessionPath, saveToHistory, bumpGraphEpoch],
   );
@@ -707,6 +712,7 @@ export default function App() {
               fromTrending,
             };
       const result = await explore(payload);
+      if (!result) return;
       bumpGraphEpoch();
       if (result?.fromTrending && mode === 'fast' && result.rootNode) {
         setSelectedNode(result.rootNode);
@@ -831,6 +837,12 @@ export default function App() {
           onOpenSessions={() => setSessionsOpen(true)}
           prefillTopic={prefillTopic}
           staticPicks={staticPicks}
+          requestNotice={
+            error
+              ? { message: error, kind: errorKindFromError({ code: errorCode }) }
+              : null
+          }
+          onClearRequestNotice={clearError}
         />
       )}
 
@@ -1156,18 +1168,14 @@ export default function App() {
             </div>
           </div>
 
-          {/* Error toast */}
           {error && (
-            <div
-              className="absolute top-16 left-1/2 -translate-x-1/2 z-50
-                px-4 py-2.5 rounded-xl text-sm text-red-300 flex items-center gap-2"
-              style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.25)' }}
-            >
-              <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-              </svg>
-              {error}
+            <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 w-[min(100%,24rem)] px-4">
+              <RequestNotice
+                kind={errorKindFromError({ code: errorCode })}
+                message={error}
+                onRetry={clearError}
+                retryLabel="Dismiss"
+              />
             </div>
           )}
         </>

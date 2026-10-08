@@ -1,4 +1,5 @@
 import { followUpChat } from '../services/deepseek.js';
+import { sendRouteError } from '../lib/contentSafety.js';
 
 /** POST /api/followup — mounted directly from index.js (avoids sub-router 404 if process is stale). */
 export async function followupPostHandler(req, res) {
@@ -41,7 +42,6 @@ export async function followupPostHandler(req, res) {
     });
     res.json(result);
   } catch (err) {
-    console.error('[followup]', err);
-    res.status(500).json({ error: err.message || 'Follow-up failed' });
+    sendRouteError(res, err, 'followup', 'Follow-up failed');
   }
 }

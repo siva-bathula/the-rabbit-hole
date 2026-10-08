@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import RequestNotice from './RequestNotice.jsx';
 
 export function getRandomN(arr, n) {
   // Handle cases where n is greater than the array length
@@ -78,6 +79,8 @@ export default function SearchBar({
   onOpenSessions,
   prefillTopic = '',
   staticPicks = [],
+  requestNotice = null,
+  onClearRequestNotice,
 }) {
   const [topic, setTopic] = useState(prefillTopic);
   const [submittedTopic, setSubmittedTopic] = useState('');
@@ -266,7 +269,10 @@ export default function SearchBar({
                 ref={inputRef}
                 type="text"
                 value={topic}
-                onChange={(e) => setTopic(e.target.value)}
+                onChange={(e) => {
+                  setTopic(e.target.value);
+                  onClearRequestNotice?.();
+                }}
                 placeholder="Ask a question or enter a topic…"
                 autoFocus
                 className="w-full px-5 py-4 pr-14 rounded-2xl text-white text-base font-medium
@@ -300,6 +306,15 @@ export default function SearchBar({
                 </svg>
               </button>
             </form>
+
+            {requestNotice?.message && (
+              <div className="mt-4 text-left">
+                <RequestNotice
+                  kind={requestNotice.kind}
+                  message={requestNotice.message}
+                />
+              </div>
+            )}
 
             {/* Recent sessions (2) + Sessions drawer */}
             {sortedSessions.length > 0 && (

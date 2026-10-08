@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { generateQuiz } from '../services/deepseek.js';
+import { sendRouteError } from '../lib/contentSafety.js';
 
 const router = Router();
 
@@ -12,8 +13,7 @@ router.post('/', async (req, res) => {
     const questions = await generateQuiz(nodeLabel, explanation);
     res.json({ questions });
   } catch (err) {
-    console.error('[quiz]', err.message);
-    res.status(500).json({ error: 'Failed to generate quiz' });
+    sendRouteError(res, err, 'quiz', 'Failed to generate quiz');
   }
 });
 

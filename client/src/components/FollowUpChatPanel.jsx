@@ -6,6 +6,8 @@ import {
   collectFollowUpMessages,
 } from '../lib/followUpGraph.js';
 import { withTurnstilePayload, fetchWithTurnstile } from '../lib/turnstile.js';
+import { apiErrorFromPayload, errorKindFromPayload } from '../lib/apiErrors.js';
+import RequestNotice from './RequestNotice.jsx';
 
 export default function FollowUpChatPanel({
   triggerNode,
@@ -25,6 +27,7 @@ export default function FollowUpChatPanel({
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
+  const [errorKind, setErrorKind] = useState('error');
   const [offTopicNote, setOffTopicNote] = useState(null);
   const bottomRef = useRef(null);
   const lastQuestionRef = useRef('');
@@ -43,6 +46,7 @@ export default function FollowUpChatPanel({
 
       setSending(true);
       setError(null);
+      setErrorKind('error');
       setOffTopicNote(null);
 
       const prior = collectFollowUpMessages(nodes, links, branchAnchorId);
@@ -63,7 +67,7 @@ export default function FollowUpChatPanel({
           body: JSON.stringify(body),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Request failed');
+        if (!res.ok || data.error) throw apiErrorFromPayload(data, 'Request failed');
 
         const leafId = getFollowUpChainLeafId(nodes, links, branchAnchorId);
         addFollowUpNode(leafId, {
@@ -81,6 +85,7 @@ export default function FollowUpChatPanel({
         onPersist?.();
       } catch (err) {
         setError(err.message || 'Something went wrong.');
+        setErrorKind(err.code ? errorKindFromPayload({ code: err.code }) : 'error');
       } finally {
         setSending(false);
       }
@@ -199,25 +204,15 @@ export default function FollowUpChatPanel({
               </div>
             ))}
             {error && (
-              <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-3 text-red-300 text-sm">
-                <p>{error}</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setError(null);
-                    handleSend();
-                  }}
-                  disabled={sending || !input.trim()}
-                  className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-40
-                    text-red-200/80 hover:text-red-100 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  Try again
-                </button>
-              </div>
+              <RequestNotice
+                kind={errorKind}
+                message={error}
+                onRetry={() => {
+                  setError(null);
+                  setErrorKind('error');
+                  handleSend();
+                }}
+              />
             )}
             {offTopicNote && (
               <div

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { compareAcrossSubjects } from '../services/deepseek.js';
+import { sendRouteError } from '../lib/contentSafety.js';
 
 const router = Router();
 
@@ -28,8 +29,7 @@ router.post('/', async (req, res) => {
     });
     res.json(data);
   } catch (err) {
-    console.error('[compare]', err.message);
-    res.status(500).json({ error: 'Failed to compare subjects' });
+    sendRouteError(res, err, 'compare', 'Failed to compare subjects');
   }
 });
 
