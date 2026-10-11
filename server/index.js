@@ -18,6 +18,7 @@ import { startTrendingRefresh } from './services/trending.js';
 import { probeGeminiFlashGraphOnStartup } from './services/deepseek.js';
 import { startLlmMetrics } from './lib/llmMetrics.js';
 import { FirestoreRateLimitStore } from './lib/rateLimitFirestoreStore.js';
+import { startRateLimitFirestoreCleanup } from './lib/rateLimitFirestoreCleanup.js';
 import { resolveTurnstileSessionSignerSecret } from './lib/rhTurnstileSession.js';
 import { createRequireTurnstile } from './middleware/requireTurnstile.js';
 import { createRequireTrustedIngress, requestHost } from './middleware/requireTrustedIngress.js';
@@ -267,6 +268,7 @@ const server = app.listen(PORT, () => {
   console.log(`Rabbit Hole server running on http://127.0.0.1:${PORT} (and your LAN interface)`);
   // Warm the cache immediately, then refresh every 30 minutes
   startTrendingRefresh();
+  if (useFirestoreRateLimit) startRateLimitFirestoreCleanup();
   startLlmMetrics();
   probeGeminiFlashGraphOnStartup().catch((e) =>
     console.error('[gemini] startup probe unexpected error:', e?.message || e),

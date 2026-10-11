@@ -28,6 +28,10 @@ All **`POST /api/*`** requests in production must send an **`Origin`** header th
 
 **Rate limits:** `/api/*` stays at **10 requests per minute per IP** (shared Firestore counter in production by default). Tune in `server/index.js` if needed after Turnstile is live.
 
+**Rate-limit Firestore growth:** Each client IP gets a document in `api_rate_limits`. Every hit refreshes `expireAt` (~1 day after last request). The server runs a periodic job (default every 6 hours) that deletes documents where **`expireAt` ≤ now**. Disable with `RATE_LIMIT_CLEANUP_ENABLED=0`; interval via `RATE_LIMIT_CLEANUP_INTERVAL_MS` (minimum 60000).
+
+For hands-off cleanup in GCP, enable a **Firestore TTL policy** on collection `api_rate_limits`, field **`expireAt`** (Console → Firestore → TTL, or `gcloud firestore fields ttls update expireAt --collection-group=api_rate_limits --enable-ttl`). TTL deletion is eventually consistent; the app job is a useful backup until TTL is enabled.
+
 **Edge:** Putting the site behind **Cloudflare** (Bot Fight Mode, rate rules) adds another layer on top of application checks.
 
 ### Hide origin / block direct Cloud Run access

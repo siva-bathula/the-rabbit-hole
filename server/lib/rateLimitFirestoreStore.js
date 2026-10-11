@@ -2,7 +2,8 @@ import { Timestamp } from '@google-cloud/firestore';
 import { createHash } from 'node:crypto';
 import { getSharedFirestore } from './firestoreClient.js';
 
-const COLLECTION = 'api_rate_limits';
+export const RATE_LIMIT_FIRESTORE_COLLECTION = 'api_rate_limits';
+const COLLECTION = RATE_LIMIT_FIRESTORE_COLLECTION;
 
 /** Inactive keys are marked for removal after this many days (set a Firestore TTL policy on field `expireAt` for this collection). */
 const DOC_TTL_AFTER_LAST_HIT_DAYS = 1;
