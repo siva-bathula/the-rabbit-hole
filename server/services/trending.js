@@ -4,14 +4,14 @@ import { deepseekV4FlashChat, parseDeepseekAssistantJson } from './deepseek.js';
 
 // Indian news RSS feeds — tried in order, first to return ≥3 valid headlines wins
 const RSS_SOURCES = [
-  // NDTV top stories
-  {url: 'https://feeds.feedburner.com/ndtvnews-top-stories', type: 'ndtv'},
-  // India Today
-  {url: 'https://www.indiatoday.in/rss/1206578', type: 'indiatoday'},
-  // The Hindu - National
-  {url: 'https://www.thehindu.com/news/national/?service=rss', type: 'thehindu'},
-  // Google News India geo (may be geo-blocked on some servers)
-  {url: 'https://news.google.com/rss/search?q=india+news&hl=en-IN&gl=IN&ceid=IN:en', type: 'googlenews'},
+  // Science & tech first — better fit for curiosity / explainable topics
+  { url: 'https://www.thehindu.com/sci-tech/science/?service=rss', type: 'thehindu-science' },
+  { url: 'https://www.thehindu.com/sci-tech/technology/?service=rss', type: 'thehindu-tech' },
+  // Broader India news (fallback)
+  { url: 'https://www.thehindu.com/news/national/?service=rss', type: 'thehindu' },
+  { url: 'https://www.indiatoday.in/rss/1206578', type: 'indiatoday' },
+  { url: 'https://feeds.feedburner.com/ndtvnews-top-stories', type: 'ndtv' },
+  { url: 'https://news.google.com/rss/search?q=india+science+technology&hl=en-IN&gl=IN&ceid=IN:en', type: 'googlenews' },
 ];
 
 // Strings that indicate the feed returned an error page rather than real headlines
@@ -264,16 +264,24 @@ async function distilTopics(headlines, rssItems) {
       messages: [
         {
           role: 'system',
-          content: `You are a knowledge curator for an Indian audience.
-You receive recent news headlines. Pick exactly 4 headlines that users can explore **as the specific story behind the headline** — not as a generic textbook topic.
+          content: `You are a knowledge curator for an Indian audience on a **curiosity & learning** app (not a breaking-news ticker).
+You receive recent headlines. Pick exactly 4 that users can explore **as the specific story behind the headline** — with rich, explainable background.
 
 Primary goal:
-- The user will tap a chip and read a knowledge graph **about this news event**: what happened, who/what is involved, why it matters, background, and sensible next questions — all tied to THAT headline.
-- The "label" is the short chip text; it must sound like a **specific story title** (3–7 words), NOT a broad category (bad: "Indian Aviation Industry", "Space Science"; good: "Artemis II crewed Moon flyby", "Telangana seniors pension bill").
+- The user taps a chip and gets a knowledge graph: what happened, key concepts, why it matters, and follow-up questions — tied to THAT headline.
+- The "label" is short chip text (3–7 words), like a specific story title — NOT a broad category.
+
+Strong preferences (in order):
+- Science, space, health, climate, technology, economics, infrastructure, education, culture, sports achievements, thoughtful policy.
+- Headlines where a graph can teach mechanisms, history, or tradeoffs — not mere opinion.
+
+Deprioritize (pick only if nothing better exists):
+- Partisan politics, election drama, protest clashes, personality feuds.
+- Factory fires, accidents, crime blotter, or other breaking tragedies unless the headline clearly invites an explanatory angle (regulation, science, public health).
 
 Rules:
-- Favour India-linked or India-relevant stories when possible (achievements, policy, economy, science, culture, sports, people).
-- Prefer educational, civic, or constructive angles; avoid gratuitous shock or outrage framing.
+- Favour India-linked or India-relevant stories when possible.
+- Prefer educational, civic, or constructive angles; avoid outrage framing.
 - STRICTLY AVOID anti-Indian, hate, or exploitative angles; avoid operational detail that could enable harm.
 - NEVER pick a headline that mentions or centres on: sexual violence or rape, sexual assault, child sexual abuse, incest, graphic murder methods (beheading, lynching), suicide or self-harm, honour killing, or similarly traumatic / prurient crime stories — even if such lines appear in the list (they should not; if you see one, skip it).
 - STRICTLY AVOID picking headlines whose exploration would require graphic violence, illegal instructions, or extremist content.

@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import RequestNotice from './RequestNotice.jsx';
+import LandingGraphDemo from './LandingGraphDemo.jsx';
 
 export function getRandomN(arr, n) {
   // Handle cases where n is greater than the array length
@@ -79,16 +80,31 @@ export default function SearchBar({
   onOpenSessions,
   prefillTopic = '',
   staticPicks = [],
+  searchHistory = [],
+  onOpenSharedGraph,
   requestNotice = null,
+  onCancelExplore,
   onClearRequestNotice,
 }) {
   const [topic, setTopic] = useState(prefillTopic);
   const [submittedTopic, setSubmittedTopic] = useState('');
   const [trendingTopics, setTrendingTopics] = useState([]);
+  const [shareLinkInput, setShareLinkInput] = useState('');
+  const [shareLinkError, setShareLinkError] = useState('');
+  const [loadingSlow, setLoadingSlow] = useState(false);
   const inputRef = useRef(null);
   const typingRef = useRef(null);
   // Typewriter uses refs — no state updates during animation so zero extra renders
   const suggestionIndexRef = useRef(0);
+
+  useEffect(() => {
+    if (!isLoading) {
+      setLoadingSlow(false);
+      return;
+    }
+    const t = setTimeout(() => setLoadingSlow(true), 28_000);
+    return () => clearTimeout(t);
+  }, [isLoading]);
 
   // When a fork pre-fills the topic, sync it into state
   useEffect(() => {
@@ -177,17 +193,64 @@ export default function SearchBar({
     [sessions],
   );
 
+  const runSearch = useCallback(
+    (query) => {
+      const trimmed = String(query || '').trim();
+      if (!trimmed || isLoading) return;
+      setTopic(trimmed);
+      setSubmittedTopic(trimmed);
+      onSearch(trimmed);
+    },
+    [isLoading, onSearch],
+  );
+
   const handleSubmit = (e) => {
     e.preventDefault();
-    const trimmed = topic.trim();
-    if (!trimmed || isLoading) return;
-    setSubmittedTopic(trimmed);
-    onSearch(trimmed);
+    runSearch(topic);
   };
 
   const handleSuggestionClick = (s) => {
-    setTopic(s);
-    inputRef.current?.focus();
+    runSearch(s);
+  };
+
+  const sharedSessions = useMemo(
+    () => sortedSessions.filter((s) => s.shareId),
+    [sortedSessions],
+  );
+
+  const parseShareId = (text) => {
+    const raw = String(text || '').trim();
+    if (/^[a-z0-9]{8}$/.test(raw)) return raw;
+    try {
+      const url = new URL(raw.includes('://') ? raw : `https://x/?${raw}`);
+      const fromQuery = url.searchParams.get('share');
+      if (fromQuery && /^[a-z0-9]{8}$/.test(fromQuery)) return fromQuery;
+    } catch {
+      /* not a URL */
+    }
+    const m = raw.match(/share=([a-z0-9]{8})/i) || raw.match(/\/([a-z0-9]{8})(?:\?|$)/);
+    return m?.[1] || null;
+  };
+
+  const handleOpenShareLink = (e) => {
+    e.preventDefault();
+    const id = parseShareId(shareLinkInput);
+    if (!id) {
+      setShareLinkError('Paste a link like yoursitename.org/?share=abcd1234');
+      return;
+    }
+    setShareLinkError('');
+    setShareLinkInput('');
+    onOpenSharedGraph?.(id);
+  };
+
+  const copyShareUrl = async (id) => {
+    const url = `${window.location.origin}/?share=${id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      window.prompt('Copy this link:', url);
+    }
   };
 
   return (
@@ -244,23 +307,41 @@ export default function SearchBar({
               <p className="text-white/35 text-sm animate-pulse mt-2">
                 Mapping the knowledge graph…
               </p>
+              {loadingSlow && (
+                <div className="mt-4 space-y-3">
+                  <p className="text-amber-200/75 text-sm">
+                    Still working… or verification may have failed silently.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onCancelExplore?.();
+                      setLoadingSlow(false);
+                    }}
+                    className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-purple-600 hover:bg-purple-500 transition-colors"
+                  >
+                    Cancel and try again
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         ) : (
           /* ── Default search state ── */
           <>
-            {/* Logo / Title */}
-            <div className="mb-3 flex justify-center">
-              <span className="inline-block w-12 h-12 rounded-full bg-purple-600/20 border border-purple-500/30 text-2xl flex items-center justify-center">
+            <LandingGraphDemo />
+
+            <div className="mb-2 flex justify-center">
+              <span className="inline-block w-10 h-10 rounded-full bg-purple-600/20 border border-purple-500/30 text-xl flex items-center justify-center">
                 🕳️
               </span>
             </div>
 
-            <h1 className="text-5xl font-black text-white mb-3 tracking-tight">
+            <h1 className="text-4xl sm:text-5xl font-black text-white mb-2 tracking-tight">
               The Rabbit Hole
             </h1>
-            <p className="text-white/40 text-[0.9375rem] sm:text-base mb-10 leading-snug max-w-[19rem] sm:max-w-md mx-auto text-balance">
-              Ask a question or pick a topic — AI builds a clickable map of ideas.
+            <p className="text-white/45 text-[0.9375rem] sm:text-base mb-8 leading-snug max-w-md mx-auto text-balance">
+              Not another answer box — an interactive map you click through, branch by branch.
             </p>
 
             {/* Search form */}
@@ -315,6 +396,95 @@ export default function SearchBar({
                 />
               </div>
             )}
+
+            {searchHistory.length > 0 && (
+              <div className="mt-5">
+                <p className="text-white/20 text-xs mb-2 uppercase tracking-widest">Recent searches</p>
+                <div className="flex flex-wrap justify-center gap-2">
+                  {searchHistory.slice(0, 5).map((q) => (
+                    <button
+                      key={q}
+                      type="button"
+                      onClick={() => runSearch(q)}
+                      className="px-3 py-1.5 rounded-full text-xs font-medium transition-all
+                        bg-white/5 border border-white/10 text-white/55
+                        hover:bg-purple-500/15 hover:border-purple-500/30 hover:text-white/85"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Shared maps growth loop */}
+            <div className="mt-6 text-left max-w-md mx-auto">
+              <p className="text-white/25 text-xs uppercase tracking-widest text-center mb-2">
+                Shared explorations
+              </p>
+              <p className="text-white/30 text-xs text-center mb-3 leading-relaxed">
+                Finish a map, tap Share in the graph — anyone with the link picks up your explored nodes.
+              </p>
+              {sharedSessions.length > 0 && (
+                <div className="flex flex-col gap-2 mb-3">
+                  {sharedSessions.slice(0, 3).map((s) => (
+                    <div
+                      key={s.id}
+                      className="flex items-center gap-2 px-3 py-2 rounded-xl text-left"
+                      style={{
+                        background: 'rgba(255,255,255,0.04)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onOpenSharedGraph?.(s.shareId)}
+                        className="flex-1 min-w-0 text-left"
+                      >
+                        <span className="text-xs font-semibold text-white/80 truncate block">
+                          {sessionListTitle(s)}
+                        </span>
+                        <span className="text-[10px] text-white/35">Open shared map</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => copyShareUrl(s.shareId)}
+                        className="shrink-0 text-[10px] font-medium px-2 py-1 rounded-lg text-purple-200
+                          border border-purple-500/30 hover:bg-purple-500/10"
+                      >
+                        Copy link
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <form onSubmit={handleOpenShareLink} className="flex gap-2">
+                <input
+                  type="text"
+                  value={shareLinkInput}
+                  onChange={(e) => {
+                    setShareLinkInput(e.target.value);
+                    setShareLinkError('');
+                  }}
+                  placeholder="Paste a friend’s ?share= link"
+                  className="flex-1 min-w-0 px-3 py-2 rounded-xl text-xs text-white placeholder-white/25 outline-none"
+                  style={{
+                    background: 'rgba(255,255,255,0.05)',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                  }}
+                />
+                <button
+                  type="submit"
+                  className="shrink-0 px-3 py-2 rounded-xl text-xs font-semibold text-white
+                    bg-purple-600 hover:bg-purple-500 transition-colors"
+                >
+                  Open
+                </button>
+              </form>
+              {shareLinkError && (
+                <p className="text-orange-300/80 text-[10px] mt-1.5 text-center">{shareLinkError}</p>
+              )}
+            </div>
 
             {/* Recent sessions (2) + Sessions drawer */}
             {sortedSessions.length > 0 && (
@@ -384,10 +554,13 @@ export default function SearchBar({
             <div className="mt-5 space-y-3">
               {trendingTopics.length > 0 ? (
                 <>
-                  {/* Trending row */}
+                  {/* News explainer lane */}
                   <div>
-                    <p className="text-white/20 text-xs mb-2 uppercase tracking-widest flex items-center justify-center gap-1.5">
-                      <span>🔥</span> Trending
+                    <p className="text-white/20 text-xs mb-1 uppercase tracking-widest flex items-center justify-center gap-1.5">
+                      <span>📰</span> Today&apos;s news — explained
+                    </p>
+                    <p className="text-white/25 text-[10px] mb-2 text-center max-w-xs mx-auto leading-snug">
+                      Maps grounded in headlines. For evergreen topics, use Popular below.
                     </p>
                     <div className="flex flex-wrap justify-center gap-2">
                       {trendingTopics.map((t) => {
@@ -466,30 +639,40 @@ export default function SearchBar({
               )}
             </div>
 
-            {/* Mode toggle */}
+            {/* Mode — two named options */}
             <div className="mt-8 flex flex-col items-center gap-2">
-              <button
-                onClick={() => onModeChange(mode === 'fast' ? 'slow' : 'fast')}
-                className={`flex items-center gap-3 px-5 py-2.5 rounded-2xl text-sm font-medium transition-all border
-                  ${mode === 'slow'
-                    ? 'bg-purple-600/20 border-purple-500/40 text-purple-300'
-                    : 'bg-white/4 border-white/8 text-white/40 hover:text-white/60 hover:bg-white/8'
-                  }`}
+              <div
+                className="inline-flex p-1 rounded-2xl border gap-0.5"
+                style={{
+                  background: 'rgba(255,255,255,0.04)',
+                  borderColor: 'rgba(255,255,255,0.1)',
+                }}
+                role="group"
+                aria-label="Exploration mode"
               >
-                {/* Toggle pill */}
-                <span
-                  className={`relative inline-flex w-9 h-5 rounded-full transition-colors flex-shrink-0 ${
-                    mode === 'slow' ? 'bg-purple-500' : 'bg-white/15'
+                <button
+                  type="button"
+                  onClick={() => onModeChange('fast')}
+                  className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                    mode === 'fast'
+                      ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/40'
+                      : 'text-white/45 hover:text-white/70'
                   }`}
                 >
-                  <span
-                    className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-                      mode === 'slow' ? 'translate-x-4' : 'translate-x-0'
-                    }`}
-                  />
-                </span>
-                <span>Slow Burn mode</span>
-              </button>
+                  Graph view
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onModeChange('slow')}
+                  className={`px-4 py-2 rounded-xl text-sm font-semibold transition-all ${
+                    mode === 'slow'
+                      ? 'bg-purple-600 text-white shadow-lg shadow-purple-900/40'
+                      : 'text-white/45 hover:text-white/70'
+                  }`}
+                >
+                  Slow Burn
+                </button>
+              </div>
               <p className="text-white/20 text-xs">
                 {mode === 'slow'
                   ? 'One concept at a time, guided reading'

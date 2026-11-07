@@ -248,6 +248,7 @@ export default function App() {
     rootLabel,
     groundingContext,
     explore,
+    cancelExplore,
     expand,
     collapse,
     reset,
@@ -360,6 +361,70 @@ export default function App() {
     syncSessionFromLiveGraph();
   }, [graphData, pathIds, phase, isExploring, shareId, syncSessionFromLiveGraph]);
 
+  const openSharedGraph = useCallback((rawId) => {
+    const shareId = String(rawId || '').trim();
+    if (!/^[a-z0-9]{8}$/.test(shareId)) return false;
+
+    const existing = findSessionByShareId(loadSessions(), shareId);
+    if (existing) {
+      resetSessionPath();
+      restore({
+        graphData: existing.graphData,
+        expandedNodes: existing.expandedNodes,
+        rootLabel: existing.rootLabel,
+        sessionTopic: existing.topic || '',
+        parentLabelOf: existing.parentLabelOf,
+        originalPosition: existing.originalPosition,
+        explanationCache: existing.explanationCache,
+        expandDataCache: existing.expandDataCache,
+        groundingContext: existing.groundingContext || '',
+        comparisonSubjects: existing.comparisonSubjects ?? null,
+        comparisonAlignment: existing.comparisonAlignment ?? null,
+      });
+      replacePath(
+        filterPathToGraph(existing.explorationPathIds, existing.graphData.nodes),
+      );
+      setShareId(shareId);
+      setCurrentTopic(existing.topic);
+      setMode(existing.mode);
+      setPhase('graph');
+      setActiveSessionId(existing.id);
+      commitSessions((prev) =>
+        prev.map((s) =>
+          s.id === existing.id ? { ...s, lastUsedAt: Date.now() } : s,
+        ),
+      );
+      setGraphInteractionEpoch((n) => n + 1);
+      return true;
+    }
+
+    fetch(`/api/share/${shareId}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.error) return;
+        const snap = deserializeShareSnap(data);
+        const topic =
+          (data.topic || snap.rootLabel || '').trim() || 'Shared exploration';
+        resetSessionPath();
+        restore(snap);
+        setShareId(shareId);
+        setCurrentTopic(topic);
+        setPhase('graph');
+        setGraphInteractionEpoch((n) => n + 1);
+
+        const session = buildSession(topic, loadMode(), snap, shareId, []);
+        let resolvedActiveId = null;
+        commitSessions((prev) => {
+          const { next, activeId } = applySessionSync(prev, session, null);
+          resolvedActiveId = activeId;
+          return next;
+        });
+        if (resolvedActiveId) setActiveSessionId(resolvedActiveId);
+      })
+      .catch((err) => console.error('[share restore]', err));
+    return true;
+  }, [restore, resetSessionPath, replacePath, commitSessions, setGraphInteractionEpoch]);
+
   // #1 — Restore live graph on first mount (runs once)
   // If a ?share= param is present, load that graph from the API instead.
   useEffect(() => {
@@ -367,68 +432,9 @@ export default function App() {
     const shareId = params.get('share');
 
     if (shareId) {
-      // Load shared graph — skip live restore, clear the query param from the URL
       window.history.replaceState({}, '', window.location.pathname);
-
-      const existing = findSessionByShareId(loadSessions(), shareId);
-      if (existing) {
-        resetSessionPath();
-        restore({
-          graphData: existing.graphData,
-          expandedNodes: existing.expandedNodes,
-          rootLabel: existing.rootLabel,
-          sessionTopic: existing.topic || '',
-          parentLabelOf: existing.parentLabelOf,
-          originalPosition: existing.originalPosition,
-          explanationCache: existing.explanationCache,
-          expandDataCache: existing.expandDataCache,
-          groundingContext: existing.groundingContext || '',
-          comparisonSubjects: existing.comparisonSubjects ?? null,
-          comparisonAlignment: existing.comparisonAlignment ?? null,
-        });
-        replacePath(
-          filterPathToGraph(existing.explorationPathIds, existing.graphData.nodes),
-        );
-        setShareId(shareId);
-        setCurrentTopic(existing.topic);
-        setMode(existing.mode);
-        setPhase('graph');
-        setActiveSessionId(existing.id);
-        commitSessions((prev) =>
-          prev.map((s) =>
-            s.id === existing.id ? { ...s, lastUsedAt: Date.now() } : s,
-          ),
-        );
-        setGraphInteractionEpoch((n) => n + 1);
-        restoredRef.current = true;
-        return;
-      }
-
-      fetch(`/api/share/${shareId}`)
-        .then((r) => r.json())
-        .then((data) => {
-          if (data.error) return;
-          const snap = deserializeShareSnap(data);
-          const topic =
-            (data.topic || snap.rootLabel || '').trim() || 'Shared exploration';
-          resetSessionPath();
-          restore(snap);
-          setShareId(shareId);
-          setCurrentTopic(topic);
-          setPhase('graph');
-          setGraphInteractionEpoch((n) => n + 1);
-
-          const session = buildSession(topic, loadMode(), snap, shareId, []);
-          let resolvedActiveId = null;
-          commitSessions((prev) => {
-            const { next, activeId } = applySessionSync(prev, session, null);
-            resolvedActiveId = activeId;
-            return next;
-          });
-          if (resolvedActiveId) setActiveSessionId(resolvedActiveId);
-        })
-        .catch((err) => console.error('[share restore]', err))
-        .finally(() => { restoredRef.current = true; });
+      openSharedGraph(shareId);
+      restoredRef.current = true;
       return;
     }
 
@@ -837,11 +843,14 @@ export default function App() {
           onOpenSessions={() => setSessionsOpen(true)}
           prefillTopic={prefillTopic}
           staticPicks={staticPicks}
+          searchHistory={searchHistory}
+          onOpenSharedGraph={openSharedGraph}
           requestNotice={
             error
               ? { message: error, kind: errorKindFromError({ code: errorCode }) }
               : null
           }
+          onCancelExplore={cancelExplore}
           onClearRequestNotice={clearError}
         />
       )}

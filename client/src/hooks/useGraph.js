@@ -1,6 +1,13 @@
 import { useState, useCallback, useRef } from 'react';
 import { graphPrimaryRootId } from '../lib/graphRoot.js';
-import { withTurnstilePayload, fetchWithTurnstile } from '../lib/turnstile.js';
+import {
+  withTurnstilePayload,
+  fetchWithTurnstile,
+  TURNSTILE_TOKEN_TIMEOUT_MS,
+} from '../lib/turnstile.js';
+
+/** Wall clock for explore POST (after Turnstile session is ready). */
+const EXPLORE_FETCH_TIMEOUT_MS = 120_000;
 import { apiErrorFromPayload } from '../lib/apiErrors.js';
 
 function buildOutgoingAdj(links) {
@@ -78,6 +85,8 @@ export function useGraph() {
   const explanationCacheRef = useRef(new Map());
   // nodeId → raw API response from /api/expand (avoids re-fetching on collapse+re-expand)
   const expandDataCacheRef = useRef(new Map());
+  const exploreAbortRef = useRef(null);
+  const exploreUserCancelRef = useRef(false);
 
   const explore = useCallback(async (payload) => {
     const topic = typeof payload === 'string' ? payload : payload.topic;
@@ -107,17 +116,42 @@ export function useGraph() {
     setComparisonSubjects(null);
     setComparisonAlignment(null);
 
+    exploreAbortRef.current?.abort();
+    exploreUserCancelRef.current = false;
+    const controller = new AbortController();
+    exploreAbortRef.current = controller;
+    const fetchTimeoutId = setTimeout(() => controller.abort(), EXPLORE_FETCH_TIMEOUT_MS);
+
     try {
-      const body = await withTurnstilePayload({
+      const verifyTimeoutMs = import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim()
+        ? TURNSTILE_TOKEN_TIMEOUT_MS + 5_000
+        : 5_000;
+      let verifyTimer;
+      const bodyPromise = withTurnstilePayload({
         topic,
         groundingContext,
         articleUrl,
         fromTrending,
       });
+      const body = await Promise.race([
+        bodyPromise,
+        new Promise((_, reject) => {
+          verifyTimer = setTimeout(
+            () => reject(new Error('Verification timed out — please try again.')),
+            verifyTimeoutMs,
+          );
+        }),
+      ]).finally(() => clearTimeout(verifyTimer));
+
+      if (controller.signal.aborted) {
+        throw new DOMException('Explore aborted', 'AbortError');
+      }
+
       const res = await fetchWithTurnstile('/api/explore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
       const data = await res.json();
       if (!res.ok) throw apiErrorFromPayload(data, 'Server error');
@@ -176,12 +210,30 @@ export function useGraph() {
         fromTrending,
       };
     } catch (err) {
-      setError(err.message);
+      const aborted =
+        err?.name === 'AbortError' || controller.signal.aborted;
+      if (aborted && exploreUserCancelRef.current) {
+        exploreUserCancelRef.current = false;
+        return null;
+      }
+      const message = aborted
+        ? 'This is taking too long — please try again.'
+        : err?.message || 'Something went wrong — please try again.';
+      setError(message);
       setErrorCode(err.code || null);
       return null;
     } finally {
+      clearTimeout(fetchTimeoutId);
+      if (exploreAbortRef.current === controller) exploreAbortRef.current = null;
       setIsExploring(false);
     }
+  }, []);
+
+  const cancelExplore = useCallback(() => {
+    exploreUserCancelRef.current = true;
+    exploreAbortRef.current?.abort();
+    exploreAbortRef.current = null;
+    setIsExploring(false);
   }, []);
 
   const expand = useCallback(
@@ -449,6 +501,7 @@ export function useGraph() {
     rootLabel,
     groundingContext: groundingContextRef.current,
     explore,
+    cancelExplore,
     expand,
     collapse,
     reset,

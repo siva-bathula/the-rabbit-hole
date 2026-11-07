@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "start": "node index.js",
+    "start": "NODE_ENV=production node index.js",
     "dev": "node --watch index.js",
     "benchmark:deepseek": "node scripts/benchmark-deepseek-models.mjs"
   },

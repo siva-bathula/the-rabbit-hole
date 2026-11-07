@@ -28,6 +28,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = process.env.PORT || 4000;
 
+app.disable('x-powered-by');
+
 // Help diagnose surprise exits (listen failures, stray async throws, etc.)
 process.on('unhandledRejection', (reason, p) => {
   console.error('[process] unhandledRejection:', reason, p);
@@ -43,10 +45,26 @@ const nodeEnv = String(process.env.NODE_ENV ?? '').trim();
 const IS_DEV = nodeEnv !== 'production';
 
 // ── Security headers (every response) ────────────────────────────────────────
-// Prevent the app from being embedded in any iframe (clickjacking protection).
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+  "script-src 'self' https://challenges.cloudflare.com",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  "connect-src 'self' https://challenges.cloudflare.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://firebase.googleapis.com https://firebaseinstallations.googleapis.com https://www.google-analytics.com",
+  'frame-src https://challenges.cloudflare.com',
+  ...(IS_DEV ? [] : ['upgrade-insecure-requests']),
+].join('; ');
+
 app.use((_, res, next) => {
   res.set('X-Frame-Options', 'DENY');
-  res.set('Content-Security-Policy', "frame-ancestors 'none'");
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.set('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   next();
 });
 
@@ -236,12 +254,24 @@ app.post('/api/followup', requireTurnstile, followupPostHandler);
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
 
 // Block well-known vulnerability scanner paths before they hit the SPA fallback.
-// Without this every path returns 200 (React HTML), which tells bots the server
-// is "interesting". A 404 here makes the server look boring and reduces noise.
-const SCANNER_RE = /\.(php|asp|aspx|jsp|cgi|env|git|sql|bak|log|cfg|ini|xml|yaml|yml|sh|bash)$|\/wp-|\/wordpress|\/phpinfo|\/xmlrpc|\/\.env|\/admin\/|\/phpmyadmin|\/cgi-bin/i;
+const SCANNER_RE =
+  /\.(php|asp|aspx|jsp|cgi|env|git|sql|bak|log|cfg|ini|yaml|yml|sh|bash)$|\/wp-|\/wordpress|\/phpinfo|\/xmlrpc|\/\.env|\/admin\/|\/phpmyadmin|\/cgi-bin/i;
+
+/** Public root files — must not match SCANNER_RE (e.g. sitemap.xml ends in .xml). */
+const PUBLIC_ROOT_FILES = new Set([
+  '/robots.txt',
+  '/sitemap.xml',
+  '/favicon.svg',
+  '/icons.svg',
+  '/og-image.jpg',
+  '/404.html',
+]);
 
 app.use((req, res, next) => {
+  if (PUBLIC_ROOT_FILES.has(req.path)) return next();
   if (SCANNER_RE.test(req.path)) return res.status(404).end();
+  // Random .xml probes (not sitemap)
+  if (/\.xml$/i.test(req.path)) return res.status(404).end();
   next();
 });
 
@@ -252,10 +282,26 @@ const publicIndex = path.join(staticPath, 'index.html');
 const hasSpaBuild = fs.existsSync(publicIndex);
 
 if (hasSpaBuild) {
-  app.use(express.static(staticPath));
+  const notFoundPage = path.join(staticPath, '404.html');
+  const send404 = (res) => {
+    if (fs.existsSync(notFoundPage)) res.status(404).sendFile(notFoundPage);
+    else res.status(404).type('text/plain').send('Not Found');
+  };
+
+  app.use(express.static(staticPath, { index: false, fallthrough: true }));
+
+  app.get('/', (_req, res) => {
+    res.sendFile(publicIndex);
+  });
+
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) return next();
-    res.sendFile(publicIndex);
+    return send404(res);
+  });
+
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    return send404(res);
   });
 } else if (!IS_DEV) {
   console.warn(

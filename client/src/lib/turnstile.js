@@ -1,4 +1,4 @@
-/** Cloudflare Turnstile (invisible) — serialized token minting for AI POST bodies. */
+/** Cloudflare Turnstile — serialized token minting for AI POST bodies (widget type: Invisible in dashboard). */
 
 import { captureRhTurnstileSessionFromResponse, ensureRhTurnstileSession } from './turnstileSession.js';
 
@@ -6,6 +6,19 @@ import { captureRhTurnstileSessionFromResponse, ensureRhTurnstileSession } from 
 // https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/
 const TURNSTILE_API_REVISION = 'v0';
 const SCRIPT_SRC = `https://challenges.cloudflare.com/turnstile/${TURNSTILE_API_REVISION}/api.js?render=explicit`;
+
+/** Turnstile never returning a token (broken render, network, etc.). */
+export const TURNSTILE_TOKEN_TIMEOUT_MS = 25_000;
+
+function withTimeout(promise, ms, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
 
 let scriptPromise = null;
 
@@ -61,6 +74,17 @@ function afterNextPaint(fn) {
 let widgetId = null;
 /** @type {{ resolve: (t: string) => void, reject: (e: Error) => void } | null} */
 let pending = null;
+
+function abortPendingTurnstile(message) {
+  const p = pending;
+  pending = null;
+  if (p) p.reject(new Error(message));
+  try {
+    if (widgetId != null && window.turnstile) window.turnstile.reset(widgetId);
+  } catch {
+    /* ignore */
+  }
+}
 
 /** Serialize Turnstile runs so one invisible widget is safe under concurrent API calls. */
 let chain = Promise.resolve();
@@ -139,9 +163,9 @@ function runTurnstileOnce(siteKey) {
             };
 
             if (widgetId == null) {
+              // Widget mode (Invisible / Managed) is set in the Cloudflare dashboard — not via size.
               widgetId = window.turnstile.render(el, {
                 sitekey: siteKey,
-                size: 'invisible',
                 execution: 'execute',
                 callback: (token) => {
                   const p = pending;
@@ -150,6 +174,7 @@ function runTurnstileOnce(siteKey) {
                 },
                 'error-callback': onErr,
                 'expired-callback': onErr,
+                'timeout-callback': () => onErr('timeout'),
               });
               afterNextPaint(runExecute);
             } else {
@@ -166,9 +191,22 @@ function runTurnstileOnce(siteKey) {
 }
 
 export async function getTurnstileToken(siteKey) {
-  const done = chain.then(() => runTurnstileOnce(siteKey));
+  const done = chain.then(() =>
+    withTimeout(
+      runTurnstileOnce(siteKey),
+      TURNSTILE_TOKEN_TIMEOUT_MS,
+      'Verification timed out — please try again.',
+    ),
+  );
   chain = done.catch(() => {});
-  return done;
+  try {
+    return await done;
+  } catch (e) {
+    abortPendingTurnstile(
+      e instanceof Error ? e.message : 'Verification timed out — please try again.',
+    );
+    throw e;
+  }
 }
 
 const GATEWAY_TIMEOUT_STATUSES = new Set([502, 503, 504]);
