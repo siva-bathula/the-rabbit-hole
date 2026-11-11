@@ -21,10 +21,15 @@ export function getDeepseekV4ProModel() {
   return (process.env.DEEPSEEK_V4_PRO_MODEL || DEFAULT_DEEPSEEK_V4_PRO).trim() || DEFAULT_DEEPSEEK_V4_PRO;
 }
 
-/** @see https://api-docs.deepseek.com/guides/thinking_mode — use with OpenAI-compatible chat.completions on DeepSeek. */
+/** @see https://api-docs.deepseek.com/guides/thinking_mode — top-level field; `extra_body` is not applied by the Node SDK. */
 export const deepseekThinkingChatConfig = Object.freeze({
   reasoning_effort: 'high',
-  extra_body: { thinking: { type: 'enabled' } },
+  thinking: { type: 'enabled' },
+});
+
+/** V4 thinks by default. JSON routes must disable it or reasoning tokens eat max_tokens and content comes back empty. */
+const deepseekThinkingDisabled = Object.freeze({
+  thinking: { type: 'disabled' },
 });
 
 export function isDeepseekThinkingEnabled() {
@@ -69,31 +74,40 @@ async function completionFromDeepseek(label, pending) {
 /**
  * V4 Flash — optional thinking (see `DEEPSEEK_THINKING_ENABLED`, `deepseekThinkingChatConfig`).
  * @param {Omit<import('openai').OpenAI.ChatCompletionCreateParamsNonStreaming, 'model' | 'stream'>} params
- * @param {{ thinking?: boolean }} [options] Pass `{ thinking: false }` for JSON chat routes where thinking + json_object often yields empty content.
+ * @param {{ thinking?: boolean, budgetMs?: number }} [options] Pass `{ thinking: false }` for JSON chat routes where thinking + json_object often yields empty content. `budgetMs` aborts the upstream call so the route can answer before the hosting proxy turns the wait into a 502.
  */
-export async function deepseekV4FlashChat(params, { thinking = isDeepseekThinkingEnabled() } = {}) {
+export async function deepseekV4FlashChat(params, { thinking = isDeepseekThinkingEnabled(), budgetMs = 0 } = {}) {
   const body = thinking
     ? { ...omitSamplingParamsForThinkingMode(params), ...deepseekThinkingChatConfig }
-    : { ...params };
+    : { ...params, ...deepseekThinkingDisabled };
+  const requestOptions = budgetMs > 0
+    ? { timeout: budgetMs, maxRetries: 0, signal: AbortSignal.timeout(budgetMs) }
+    : undefined;
   return completionFromDeepseek(
     '[deepseek.flash]',
-    client.chat.completions.create({
-      ...body,
-      model: getDeepseekV4FlashModel(),
-      stream: false,
-    }),
+    client.chat.completions.create(
+      {
+        ...body,
+        model: getDeepseekV4FlashModel(),
+        stream: false,
+      },
+      requestOptions,
+    ),
   );
 }
 
+/** Stay under Firebase Hosting's Cloud Run rewrite limit (~60s). Past that the edge returns 502. */
+const HOSTING_PROXY_BUDGET_MS = 45_000;
+
 /**
- * V4 Pro — optional thinking (expert / verbose). Pass `{ thinking: false }` for JSON routes.
+ * V4 Pro — optional thinking (expert). Pass `{ thinking: false }` for JSON routes.
  * @param {Omit<import('openai').OpenAI.ChatCompletionCreateParamsNonStreaming, 'model' | 'stream' | 'temperature'>} params
  * @param {{ thinking?: boolean }} [options]
  */
 async function deepseekV4ProChat(params, { thinking = isDeepseekThinkingEnabled() } = {}) {
   const body = thinking
     ? { ...omitSamplingParamsForThinkingMode(params), ...deepseekThinkingChatConfig }
-    : { ...params };
+    : { ...params, ...deepseekThinkingDisabled };
   return completionFromDeepseek(
     '[deepseek.pro]',
     client.chat.completions.create({
@@ -107,8 +121,8 @@ async function deepseekV4ProChat(params, { thinking = isDeepseekThinkingEnabled(
 /** @deprecated alias */
 const deepseekV4ProThinkingChat = deepseekV4ProChat;
 
-/** Cap generation time — Firebase Hosting → Cloud Run often times out around 60s. */
-function jsonRouteMaxTokens(mode, { verbose = 4608, expert = 3584, default: def = 2560 } = {}) {
+/** Cap output so verbose finishes inside the hosting proxy window. */
+function jsonRouteMaxTokens(mode, { verbose = 1600, expert = 3584, default: def = 2560 } = {}) {
   if (mode === 'verbose') return verbose;
   if (mode === 'expert') return expert;
   return def;
@@ -132,11 +146,12 @@ function stripAssistantJsonWrapper(text) {
   return s.slice(start);
 }
 
-/** Best-effort close for truncated JSON (token limit mid-string). */
+/** Best-effort close for truncated JSON (token limit mid-string or mid-array). */
 function closeTruncatedJsonObject(raw) {
   let out = raw.trimEnd();
+  // Drop a trailing key whose string value never closed. Keep partial arrays so
+  // earlier complete bullets survive; the bracket walk below closes them.
   out = out.replace(/,\s*"[^"]*"\s*:\s*"[^"]*$/s, '');
-  out = out.replace(/,\s*"[^"]*"\s*:\s*(\[[^\]]*)?$/s, '');
   out = out.replace(/,\s*$/, '');
 
   const stack = [];
@@ -184,10 +199,19 @@ function isRetryableJsonCompletionError(msg) {
   return /empty assistant content|not valid JSON|Unterminated string|Unexpected end of JSON/.test(msg);
 }
 
-/** @param {(attempt: number) => Promise<unknown>} makeCompletion */
-async function jsonChatWithRetry(makeCompletion, routeLabel) {
+/**
+ * @param {(attempt: number) => Promise<unknown>} makeCompletion
+ * @param {string} routeLabel
+ * @param {{ retryIfFasterThanMs?: number }} [options] Skip the second call when the first one already used most of the proxy budget — a retry there becomes a 502.
+ */
+async function jsonChatWithRetry(makeCompletion, routeLabel, { retryIfFasterThanMs = 20000 } = {}) {
   let lastErr;
+  const started = Date.now();
   for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0 && Date.now() - started > retryIfFasterThanMs) {
+      console.warn(`[${routeLabel}] skipping retry after ${Date.now() - started}ms`);
+      throw lastErr;
+    }
     const response = await makeCompletion(attempt);
     recordLlmCall(1);
     try {
@@ -756,7 +780,7 @@ export async function explainNode(
       : mode === 'layman'
       ? `Write for an adult who is curious but has no background in this field. Use plain, neutral English (no childish tone). Avoid unexplained jargon; when a technical term is necessary, define it in one short clause on first use. Spell out or expand acronyms on first use. Be respectful and direct—like a good documentary narrator, not a textbook.`
       : mode === 'verbose'
-      ? `Write comprehensively for an educated general audience. Your goal is MAXIMUM COVERAGE — leave no important aspect of this topic unaddressed. Use clear, precise prose; vary sentence length for readability but never truncate ideas prematurely. Define technical terms in one clause when needed. Be thorough and encyclopedic in spirit — like a high-quality textbook chapter or detailed reference article, not a brief summary.`
+      ? `Write comprehensively for an educated general audience. Cover the important aspects in clear, precise prose, and define technical terms in one clause when needed. Be thorough, and stay inside the length caps so the full answer fits in one response.`
       : `Write in the voice of a warm, knowledgeable educator using natural Indian English: phrases like "basically", "actually", "you see", "only" for emphasis, and occasionally "isn't it?" or "right?". Be direct and conversational: put the idea in plain words first. Do not use extended analogies, whimsical comparisons, or stock "everyday life" metaphors (markets, vendors, traffic, etc.). If one concrete example truly helps, use at most one short factual line—not a story.`;
 
   const explainTemp =
@@ -765,31 +789,31 @@ export async function explainNode(
   const isVerbose = mode === 'verbose';
 
   const summaryRootDesc = isVerbose
-    ? `"summary": 5-7 sentence comprehensive overview — what it is, why it matters, how it works at a high level, its key variants or forms, and its broader significance (string)`
+    ? `"summary": 4-5 sentence overview: what it is, why it matters, how it works at a high level, and why it is worth knowing (string)`
     : `"summary": 2-3 sentence overview of what this topic is and why it matters (string)`;
 
   const summarySubDesc = isVerbose
-    ? `"summary": 5-7 sentences comprehensively explaining what "${nodeLabel}" is and does within "${parentContext}" — cover definition, mechanism, significance, key variants, and any important nuances (string)`
+    ? `"summary": 4-5 sentences explaining what "${nodeLabel}" is and does within "${parentContext}": definition, mechanism, and why it matters here (string)`
     : `"summary": 2-3 sentences explaining what "${nodeLabel}" specifically means or does in the context of "${parentContext}" (string)`;
 
   const detailsRootDesc = isVerbose
-    ? `"details": array of 12-18 insight strings with HIGH COVERAGE — address ALL major dimensions: core mechanism, types/variants, practical applications, historical context, limitations/pitfalls, real-world impact, common misconceptions, and any other angles essential to a thorough understanding. Each bullet must be a substantive, self-contained insight (2-3 sentences each). Cover the topic exhaustively. (array of strings)`
+    ? `"details": array of 8-10 insight strings. Each string is 1-2 sentences on a distinct dimension (mechanism, variants, uses, limits, or a common misconception). Hard cap 10. Do not write paragraphs. (array of strings)`
     : `"details": array of key insight strings (typically 4-6; use 6-8 when the topic is complex or genuinely needs that many distinct points; 3-4 is fine for simple/narrow nodes; max 8, no padding) that map what matters for this topic (array of strings)`;
 
   const detailsSubDesc = isVerbose
-    ? `"details": array of 12-18 insight strings with HIGH COVERAGE — address ALL important dimensions of "${nodeLabel}" within "${parentContext}": mechanism, variants, applications, limitations, context, impact, and misconceptions. Each bullet must be substantive (2-3 sentences each). Cover exhaustively. (array of strings)`
+    ? `"details": array of 8-10 insight strings about "${nodeLabel}" within "${parentContext}". Each string is 1-2 sentences on a distinct dimension. Hard cap 10. Do not write paragraphs. (array of strings)`
     : `"details": array of key insight strings, each non-obvious or important for "${nodeLabel}" in "${parentContext}" (typically 4-6; use 6-8 when the angle needs that many distinct points; 3-4 for simple cases; max 8, no padding) (array of strings)`;
 
   const relatedRootDesc = isVerbose
-    ? `"related": array of 6-10 subtopics or adjacent concepts worth exploring (array of strings)`
+    ? `"related": array of 5-7 subtopics or adjacent concepts worth exploring (array of strings)`
     : `"related": array of 3-5 subtopics or adjacent concepts worth exploring (array of strings)`;
 
   const relatedSubDesc = isVerbose
-    ? `"related": array of 6-10 related concept labels the user might want to explore next (array of strings)`
+    ? `"related": array of 5-7 related concept labels the user might want to explore next (array of strings)`
     : `"related": array of 3-5 related concept labels the user might want to explore next (array of strings)`;
 
   const verboseLengthOverride = isVerbose
-    ? `\n\nVERBOSE MODE — override default length caps: generate 12-18 "details" bullets covering ALL important aspects exhaustively. Do NOT stop at 8. Each bullet should be 2-3 substantive sentences. Prefer completeness over brevity.`
+    ? `\n\nVERBOSE MODE — this overrides the 8-bullet cap above. Write 8-10 "details" bullets, each 1-2 sentences, then stop. Do not exceed 10. If you include code, keep it under 25 lines.`
     : '';
 
   const systemPrompt = isRoot
@@ -832,7 +856,8 @@ ${codeField}
 Be precise and specific. Every word should earn its place.`;
 
   const g = sourceGroundingSuffix(groundingContext);
-  const useProModel = mode === 'expert' || mode === 'verbose';
+  // Verbose stays on Flash: V4 Pro plus a long JSON body routinely exceeds the ~60s hosting limit (502).
+  const useProModel = mode === 'expert';
   const explainCommon = {
     messages: [
       { role: 'system', content: systemPrompt },
@@ -849,15 +874,20 @@ Be precise and specific. Every word should earn its place.`;
   };
   // Thinking + json_object is slow and often hits proxy timeouts (502) — skip for explain.
   const llmOpts = { thinking: false };
+  const t0 = Date.now();
   const data = await jsonChatWithRetry((attempt) => {
     const body = {
       ...explainCommon,
-      max_tokens: jsonRouteMaxTokens(mode) + (attempt > 0 ? 1024 : 0),
+      max_tokens: jsonRouteMaxTokens(mode) + (attempt > 0 && !isVerbose ? 1024 : 0),
     };
+    if (isVerbose) {
+      return deepseekV4FlashChat(body, { ...llmOpts, budgetMs: HOSTING_PROXY_BUDGET_MS });
+    }
     return useProModel
       ? deepseekV4ProChat(body, llmOpts)
       : deepseekV4FlashChat(body, llmOpts);
-  }, 'explain');
+  }, 'explain', { retryIfFasterThanMs: isVerbose ? 8000 : 20000 });
+  console.log(`[explain] mode=${mode} ${Date.now() - t0}ms`);
   throwIfSafetyPayload(data);
   return data;
 }
@@ -882,7 +912,7 @@ export async function deepenNode(
       : mode === 'layman'
       ? `Still writing for an adult non-specialist: go deeper, but every insight must stay readable. No jargon without a quick gloss; no condescension; no fairy-tale analogies.`
       : mode === 'verbose'
-      ? `Write an exhaustive deep-dive for an educated general audience. Your goal is COMPLETE COVERAGE of advanced, non-obvious aspects — leave no important nuance unaddressed. Be thorough, precise, and substantive. This is for someone who wants to truly understand every meaningful dimension of the topic in depth.`
+      ? `Write a deeper pass for an educated general audience. Add non-obvious mechanisms, trade-offs, and implications the summary did not cover. Stay inside the length caps so the full answer fits in one response.`
       : `Write in the voice of a warm, knowledgeable educator: direct, confident, conversational Indian English ("basically", "actually", "you see", "only", occasional "isn't it?" or "right?"). Go deeper in plain language; do not lean on extended analogies or whimsical comparisons.`;
 
   const deepenTemp =
@@ -893,7 +923,7 @@ export async function deepenNode(
     : '';
 
   const deepenInsightsDesc = mode === 'verbose'
-    ? `- "advancedInsights": array of 8-12 strings, each a thorough advanced insight (NOT obvious facts) covering ALL important non-obvious angles — mechanisms, failure modes, trade-offs, historical context, real-world implications, and expert nuances. Each insight should be 2-3 substantive sentences. Aim for complete coverage, not brevity.`
+    ? `- "advancedInsights": array of 5-7 strings. Each is one distinct non-obvious point in 1-2 sentences (mechanism, failure mode, trade-off, or real-world implication). Hard cap 7. Do not write paragraphs.`
     : `- "advancedInsights": array of 3-5 strings, each a meaty advanced insight (NOT obvious facts) ? these should feel like tips from a senior engineer or professor; write plainly without metaphor padding`;
 
   const systemPrompt =
@@ -940,8 +970,10 @@ ${codeField}
 Be precise. Every sentence must earn its place. No filler.`;
 
   const g = sourceGroundingSuffix(groundingContext);
-  // Expert and verbose use V4 Pro + thinking for higher-quality deep content.
-  const useProThinking = mode === 'expert' || mode === 'verbose';
+  const isVerbose = mode === 'verbose';
+  // Expert stays on Pro. Verbose uses Flash so the longer JSON still returns before the hosting proxy 502s.
+  const useProModel = mode === 'expert';
+  const deepenTokenCap = { verbose: 1400, expert: 2560, default: 1800 };
   const common = {
     messages: [
       { role: 'system', content: systemPrompt },
@@ -951,21 +983,25 @@ Be precise. Every sentence must earn its place. No filler.`;
       },
     ],
     response_format: { type: 'json_object' },
-    max_tokens: jsonRouteMaxTokens(mode, { verbose: 3072, expert: 2560, default: 1800 }),
+    max_tokens: jsonRouteMaxTokens(mode, deepenTokenCap),
     temperature: deepenTemp,
   };
   const llmOpts = { thinking: false };
+  const t0 = Date.now();
   const data = await jsonChatWithRetry((attempt) => {
     const body = {
       ...common,
       max_tokens:
-        jsonRouteMaxTokens(mode, { verbose: 3072, expert: 2560, default: 1800 }) +
-        (attempt > 0 ? 768 : 0),
+        jsonRouteMaxTokens(mode, deepenTokenCap) + (attempt > 0 && !isVerbose ? 768 : 0),
     };
-    return useProThinking
+    if (isVerbose) {
+      return deepseekV4FlashChat(body, { ...llmOpts, budgetMs: HOSTING_PROXY_BUDGET_MS });
+    }
+    return useProModel
       ? deepseekV4ProChat(body, llmOpts)
       : deepseekV4FlashChat(body, llmOpts);
-  }, 'deepen');
+  }, 'deepen', { retryIfFasterThanMs: isVerbose ? 8000 : 20000 });
+  console.log(`[deepen] mode=${mode} ${Date.now() - t0}ms`);
   throwIfSafetyPayload(data);
   return data;
 }

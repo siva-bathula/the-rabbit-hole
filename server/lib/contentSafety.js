@@ -53,7 +53,13 @@ export function sendRouteError(res, err, routeLabel, fallbackMessage) {
   if (isContentSafetyError(err)) {
     return sendContentSafetyResponse(res);
   }
-  console.error(`[${routeLabel}]`, err instanceof Error ? err.message : err);
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error(`[${routeLabel}]`, msg);
+  if (/timeout|timed out|aborted|ETIMEDOUT/i.test(msg)) {
+    return res.status(503).json({
+      error: 'That explanation took too long. Try again, or switch to a shorter explain mode.',
+    });
+  }
   return res.status(500).json({ error: fallbackMessage });
 }
 

@@ -85,7 +85,7 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
-        });
+        }, { retries: explainMode === 'verbose' ? 0 : 1 });
         const data = await readApiJson(r);
         if (!cancelled) {
           if (!r.ok && !data.error) {
@@ -133,8 +133,8 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-      });
-      const data = await res.json();
+      }, { retries: explainMode === 'verbose' ? 0 : 1 });
+      const data = await readApiJson(res);
       if (data.error) {
         setDeeperError(data.error);
         setDeeperErrorKind(errorKindFromPayload(data));

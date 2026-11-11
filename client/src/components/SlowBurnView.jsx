@@ -70,7 +70,7 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
-        });
+        }, { retries: mode === 'verbose' ? 0 : 1 });
         const data = await readApiJson(r);
         if (!cancelled) {
           if (!r.ok && !data.error) {
@@ -119,8 +119,8 @@ function useNodeExplanation(node, parentContext, rootLabel, sessionTopic, ground
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
-      });
-      const data = await res.json();
+      }, { retries: mode === 'verbose' ? 0 : 1 });
+      const data = await readApiJson(res);
       if (data.error) {
         setDeeperError(data.error);
         setDeeperErrorKind(errorKindFromPayload(data));
