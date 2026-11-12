@@ -514,6 +514,8 @@ export default function SlowBurnView({
   explainMode,
   onExplainModeChange,
   onExplorationStep,
+  onCurrentNodeChange,
+  pullingNodeId = null,
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 640);
 
@@ -555,6 +557,10 @@ export default function SlowBurnView({
     if (currentNode?.id && onExplorationStep) onExplorationStep(currentNode.id);
   }, [currentNode?.id, onExplorationStep]);
 
+  useEffect(() => {
+    onCurrentNodeChange?.(currentNode ?? null);
+  }, [currentNode, onCurrentNodeChange]);
+
   // Use the immediate parent's label as context — better than always using root
   const parentContext = parentNode?.label || rootLabel;
 
@@ -586,6 +592,7 @@ export default function SlowBurnView({
           graphData={graphData}
           currentNodeId={currentNode?.id ?? null}
           visitedIds={visitedIds}
+          pullingNodeId={pullingNodeId}
           rootLabel={rootLabel}
           graphRootId={graphRootId}
           onNodeClick={jumpToNode}

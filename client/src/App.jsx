@@ -8,6 +8,7 @@ import SessionsDrawer from './components/SessionsDrawer.jsx';
 import FollowUpChatPanel from './components/FollowUpChatPanel.jsx';
 import { useGraph } from './hooks/useGraph.js';
 import { useExplorationPath } from './hooks/useExplorationPath.js';
+import { usePullLevel } from './hooks/usePullLevel.js';
 import QuizOverlay from './components/QuizOverlay.jsx';
 import CompareMatrixOverlay from './components/CompareMatrixOverlay.jsx';
 import ContactDeveloperButton from './components/ContactDeveloperButton.jsx';
@@ -209,6 +210,9 @@ export default function App() {
   const [isSharing, setIsSharing] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
 
+  /** Slow Burn: current card node (graph mode uses selectedNode). */
+  const [slowBurnAnchor, setSlowBurnAnchor] = useState(null);
+
   const [comparePanelOpen, setComparePanelOpen] = useState(false);
 
   const saveToHistory = useCallback((topic) => {
@@ -265,6 +269,8 @@ export default function App() {
   }, [comparisonSubjects]);
 
   const { pathIds, appendStep, resetPath, replacePath, canReplay } = useExplorationPath();
+
+  const pullAnchorNode = mode === 'slow' ? slowBurnAnchor : selectedNode;
 
   /** Bumped only when the graph is replaced (explore, restore, new search) — not when saving a session id. */
   const [graphInteractionEpoch, setGraphInteractionEpoch] = useState(0);
@@ -330,6 +336,27 @@ export default function App() {
       explorationPathIds: pathIds,
     });
   }, [snapshot, currentTopic, mode, activeSessionId, shareId, pathIds]);
+
+  const {
+    pullLevel,
+    cancelPull,
+    running: isPullingLevel,
+    progress: pullProgress,
+    canPull: canPullLevel,
+    pendingCount: pullPendingCount,
+    lastError: pullLevelError,
+    clearError: clearPullLevelError,
+  } = usePullLevel({
+    anchorNode: pullAnchorNode,
+    nodes: graphData.nodes,
+    links: graphData.links,
+    explainMode,
+    rootLabel,
+    sessionTopic: currentTopic,
+    groundingContext,
+    explanationCache,
+    onCached: persistLive,
+  });
 
   useEffect(() => {
     if (phase === 'graph' && !isExploring) persistLive();
@@ -622,6 +649,51 @@ export default function App() {
     downloadExplorationHtml(html, currentTopic || rootLabel);
   }, [snapshot, currentTopic, rootLabel]);
 
+  const handlePullLevelClick = useCallback(() => {
+    if (isPullingLevel) {
+      cancelPull();
+      return;
+    }
+    clearPullLevelError();
+    pullLevel();
+  }, [isPullingLevel, cancelPull, clearPullLevelError, pullLevel]);
+
+  const pullLevelTitle = useMemo(() => {
+    if (isPullingLevel) {
+      const { done, total, label } = pullProgress;
+      if (label) {
+        return `Fetching “${label}” (${Math.min(done + 1, total)}/${total}) — click to cancel`;
+      }
+      return `Pulling this level (${done}/${total}) — click to cancel`;
+    }
+    if (pullLevelError) return pullLevelError;
+    if (mode === 'fast' && !pullAnchorNode) {
+      return 'Select a node to pull explanations for its siblings';
+    }
+    if (!pullAnchorNode) {
+      return 'Open a topic card to pull this level';
+    }
+    if (!canPullLevel) {
+      return 'Every sibling at this level already has an explanation for the current mode (or this node has no siblings)';
+    }
+    return `Fetch explanations for ${pullPendingCount} sibling node(s) at this level (${explainMode} mode)`;
+  }, [
+    isPullingLevel,
+    pullProgress,
+    pullLevelError,
+    mode,
+    pullAnchorNode,
+    canPullLevel,
+    pullPendingCount,
+    explainMode,
+  ]);
+
+  const pullLevelDisabled =
+    graphData.nodes.length === 0 ||
+    isExploring ||
+    isSharing ||
+    (!isPullingLevel && !canPullLevel);
+
   const handleExportSessionHtml = useCallback(
     (session) => {
       const snap = sessionToExportSnap(session);
@@ -820,6 +892,7 @@ export default function App() {
     setPrefillTopic('');
     setActiveSessionId(null);
     setShareId(null);
+    setSlowBurnAnchor(null);
     setExplainMode('normal');
   };
 
@@ -998,6 +1071,8 @@ export default function App() {
                 onQuizMe={(node, explanation) => setQuizTarget({ node, explanation, rootTopic: rootLabel })}
                 onAskFollowUp={openFollowUpPanel}
                 onExplorationStep={appendStep}
+                onCurrentNodeChange={setSlowBurnAnchor}
+                pullingNodeId={isPullingLevel ? pullProgress.nodeId : null}
               />
             </div>
           )}
@@ -1063,6 +1138,43 @@ export default function App() {
                   </svg>
                 )}
                 <span className="hidden sm:inline">{shareCopied ? 'Copied!' : 'Share'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePullLevelClick}
+                disabled={pullLevelDisabled}
+                title={pullLevelTitle}
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-sm font-medium transition-all border
+                  border-emerald-500/35 text-emerald-200/95 hover:bg-emerald-500/10
+                  disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: 'rgba(16, 185, 129, 0.08)' }}
+              >
+                {isPullingLevel ? (
+                  <div className="w-4 h-4 rounded-full border-2 border-emerald-400/30 border-t-emerald-400 animate-spin" />
+                ) : (
+                  <svg
+                    className="w-4 h-4 flex-shrink-0"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    aria-hidden
+                  >
+                    {/* Parent bar + sibling nodes at one level */}
+                    <path strokeLinecap="round" strokeWidth={2} d="M4 7.5h16" />
+                    <path strokeLinecap="round" strokeWidth={2} d="M7 7.5V10M12 7.5V10M17 7.5V10" />
+                    <circle cx="7" cy="15.5" r="2.5" strokeWidth={2} />
+                    <circle cx="12" cy="15.5" r="2.5" strokeWidth={2} />
+                    <circle cx="17" cy="15.5" r="2.5" strokeWidth={2} />
+                  </svg>
+                )}
+                <span className="hidden sm:inline">
+                  {isPullingLevel
+                    ? pullProgress.total > 0
+                      ? `Pulling ${pullProgress.done}/${pullProgress.total}`
+                      : 'Pulling…'
+                    : 'Pull this level'}
+                </span>
               </button>
 
               <button

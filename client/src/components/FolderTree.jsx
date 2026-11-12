@@ -19,10 +19,11 @@ function buildTree(nodes, links, parentId, depth = 0) {
   return result;
 }
 
-function TreeNode({ item, currentNodeId, visitedIds, onNodeClick }) {
+function TreeNode({ item, currentNodeId, visitedIds, pullingNodeId, onNodeClick }) {
   const { node, depth, children } = item;
   const isCurrent = node.id === currentNodeId;
   const isVisited = visitedIds.has(node.id);
+  const isPulling = pullingNodeId && node.id === pullingNodeId;
 
   return (
     <div>
@@ -35,16 +36,25 @@ function TreeNode({ item, currentNodeId, visitedIds, onNodeClick }) {
           }`}
         style={{ paddingLeft: `${10 + depth * 14}px` }}
       >
-        <span
-          className={`flex-shrink-0 w-3 text-center text-xs font-mono ${
-            isCurrent
-              ? 'text-purple-400'
-              : isVisited
-              ? 'text-green-400/80'
-              : 'text-white/30'
-          }`}
-        >
-          {isCurrent ? '›' : isVisited ? '✓' : '·'}
+        <span className="flex-shrink-0 w-3 h-3 flex items-center justify-center">
+          {isPulling ? (
+            <span
+              className="w-3 h-3 rounded-full border-2 border-emerald-400/30 border-t-emerald-400 animate-spin"
+              aria-hidden
+            />
+          ) : (
+            <span
+              className={`text-center text-xs font-mono ${
+                isCurrent
+                  ? 'text-purple-400'
+                  : isVisited
+                  ? 'text-green-400/80'
+                  : 'text-white/30'
+              }`}
+            >
+              {isCurrent ? '›' : isVisited ? '✓' : '·'}
+            </span>
+          )}
         </span>
         <span
           className={`truncate text-xs leading-relaxed ${node.followUp ? 'text-fuchsia-200/85' : ''}`}
@@ -66,6 +76,7 @@ function TreeNode({ item, currentNodeId, visitedIds, onNodeClick }) {
               item={child}
               currentNodeId={currentNodeId}
               visitedIds={visitedIds}
+              pullingNodeId={pullingNodeId}
               onNodeClick={onNodeClick}
             />
           ))}
@@ -75,7 +86,15 @@ function TreeNode({ item, currentNodeId, visitedIds, onNodeClick }) {
   );
 }
 
-export default function FolderTree({ graphData, currentNodeId, visitedIds, rootLabel, graphRootId: graphRootIdProp, onNodeClick }) {
+export default function FolderTree({
+  graphData,
+  currentNodeId,
+  visitedIds,
+  pullingNodeId = null,
+  rootLabel,
+  graphRootId: graphRootIdProp,
+  onNodeClick,
+}) {
   const { nodes, links } = graphData;
   const graphRootId = graphRootIdProp ?? graphPrimaryRootId(nodes);
   const rootNode = nodes.find((n) => n.id === graphRootId);
@@ -116,6 +135,7 @@ export default function FolderTree({ graphData, currentNodeId, visitedIds, rootL
             item={item}
             currentNodeId={currentNodeId}
             visitedIds={visitedIds}
+            pullingNodeId={pullingNodeId}
             onNodeClick={onNodeClick}
           />
         ))}
