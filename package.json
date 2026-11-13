@@ -2,6 +2,9 @@
   "name": "rabbit-hole",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=26.0.0"
+  },
   "scripts": {
     "dev:client": "npm run dev --prefix client",
     "dev:server": "npm run dev --prefix server",
