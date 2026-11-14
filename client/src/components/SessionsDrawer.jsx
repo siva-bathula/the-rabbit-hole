@@ -33,14 +33,14 @@ export default function SessionsDrawer({
     <>
       {/* Backdrop */}
       <div
-        className="fixed inset-0 z-40"
+        className="fixed inset-0 z-[70]"
         style={{ background: 'rgba(0,0,0,0.55)' }}
         onClick={onClose}
       />
 
       {/* Drawer — slides in from the right */}
       <div
-        className="fixed right-0 top-0 bottom-0 z-50 flex flex-col"
+        className="fixed right-0 top-0 bottom-0 z-[80] flex flex-col"
         style={{
           width: 'min(360px, 100vw)',
           background: 'linear-gradient(160deg, #0f0f1e 0%, #0a0a18 100%)',
