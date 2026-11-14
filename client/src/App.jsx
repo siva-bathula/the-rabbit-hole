@@ -34,6 +34,7 @@ import {
 } from './lib/persist.js';
 import { isNewsAnchoredSessionTopic } from './lib/newsTopic.js';
 import { graphPrimaryRootId } from './lib/graphRoot.js';
+import { trackScreenView } from './firebase.js';
 
 /** Same step as PathReplayOverlay — graph view zoom buttons */
 const GRAPH_VIEW_ZOOM_IN = 1.32;
@@ -314,6 +315,20 @@ export default function App() {
 
   // Save explain depth whenever it changes
   useEffect(() => { saveExplainMode(explainMode); }, [explainMode]);
+
+  useEffect(() => {
+    const screen =
+      phase === 'search'
+        ? 'search'
+        : mode === 'slow'
+          ? 'explore_slow'
+          : 'explore_graph';
+    trackScreenView(screen, {
+      app_phase: phase,
+      view_mode: mode,
+      ...(currentTopic ? { session_topic: currentTopic.slice(0, 100) } : {}),
+    });
+  }, [phase, mode, currentTopic]);
 
   // #2 — Save sessions whenever they change
   useEffect(() => { saveSessions(sessions); }, [sessions]);

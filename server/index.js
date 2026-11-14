@@ -55,7 +55,7 @@ const CONTENT_SECURITY_POLICY = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
-  "connect-src 'self' https://challenges.cloudflare.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://firebase.googleapis.com https://firebaseinstallations.googleapis.com https://www.google-analytics.com",
+  "connect-src 'self' https://challenges.cloudflare.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com https://firebase.googleapis.com https://firebaseinstallations.googleapis.com https://www.google-analytics.com https://www.googleapis.com https://region1.google-analytics.com https://region1.analytics.google.com",
   'frame-src https://challenges.cloudflare.com',
   ...(IS_DEV ? [] : ['upgrade-insecure-requests']),
 ].join('; ');
