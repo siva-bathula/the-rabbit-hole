@@ -2,7 +2,7 @@ import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { isExploreDebug } from '../lib/exploreDebugLog.js';
 import { ContentSafetyError, throwIfSafetyPayload } from '../lib/contentSafety.js';
-import { recordLlmCall } from '../lib/llmMetrics.js';
+import { recordGeminiCall, recordDeepseekCall } from '../lib/llmMetrics.js';
 
 const client = new OpenAI({
   apiKey: process.env.DEEPSEEK_API_KEY,
@@ -83,7 +83,7 @@ export async function deepseekV4FlashChat(params, { thinking = isDeepseekThinkin
   const requestOptions = budgetMs > 0
     ? { timeout: budgetMs, maxRetries: 0, signal: AbortSignal.timeout(budgetMs) }
     : undefined;
-  return completionFromDeepseek(
+  const out = await completionFromDeepseek(
     '[deepseek.flash]',
     client.chat.completions.create(
       {
@@ -94,6 +94,8 @@ export async function deepseekV4FlashChat(params, { thinking = isDeepseekThinkin
       requestOptions,
     ),
   );
+  recordDeepseekCall(1);
+  return out;
 }
 
 /** Stay under Firebase Hosting's Cloud Run rewrite limit (~60s). Past that the edge returns 502. */
@@ -108,7 +110,7 @@ async function deepseekV4ProChat(params, { thinking = isDeepseekThinkingEnabled(
   const body = thinking
     ? { ...omitSamplingParamsForThinkingMode(params), ...deepseekThinkingChatConfig }
     : { ...params, ...deepseekThinkingDisabled };
-  return completionFromDeepseek(
+  const out = await completionFromDeepseek(
     '[deepseek.pro]',
     client.chat.completions.create({
       ...body,
@@ -116,6 +118,8 @@ async function deepseekV4ProChat(params, { thinking = isDeepseekThinkingEnabled(
       stream: false,
     }),
   );
+  recordDeepseekCall(1);
+  return out;
 }
 
 /** @deprecated alias */
@@ -213,7 +217,6 @@ async function jsonChatWithRetry(makeCompletion, routeLabel, { retryIfFasterThan
       throw lastErr;
     }
     const response = await makeCompletion(attempt);
-    recordLlmCall(1);
     try {
       return parseDeepseekAssistantJson(response, routeLabel);
     } catch (err) {
@@ -412,7 +415,7 @@ Rules: root id must be "root". Child ids node_1, node_2, ... Every child has an 
   });
 
   const result = await model.generateContent(`Topic: ${topic}`);
-  recordLlmCall(1);
+  recordGeminiCall(1);
   const text = result.response.text();
   const parsed = JSON.parse(text);
   if (typeof parsed?.error === 'string') throw new Error(parsed.error);
@@ -585,7 +588,7 @@ COMPARISON SUBGRAPH (one side of a multi-subject comparison):
 
   try {
     const result = await model.generateContent(userPrompt);
-    recordLlmCall(1);
+    recordGeminiCall(1);
     let text;
     try {
       text = result.response.text();
@@ -701,7 +704,7 @@ Rules:
     const result = await model.generateContent(
       `${userPrefix}Concept to expand: "${nodeLabel}"\nContext/parent topic: ${parentContext}\nAlready in graph (do not repeat): ${existingLabels.join(', ')}${sourceGroundingSuffix(groundingContext)}`
     );
-    recordLlmCall(1);
+    recordGeminiCall(1);
 
     console.log(`[expandNode] "${nodeLabel}" ? ${Date.now() - t0}ms`);
     const data = JSON.parse(result.response.text());
@@ -1054,7 +1057,6 @@ Return ONLY a JSON object: { "reply": string, "offTopic": boolean }` +
   };
 
   let response = await deepseekV4FlashChat(chatParams, { thinking: false });
-  recordLlmCall(1);
 
   let data;
   try {
@@ -1064,7 +1066,6 @@ Return ONLY a JSON object: { "reply": string, "offTopic": boolean }` +
     if (!/empty assistant content/.test(msg)) throw err;
     console.warn('[followup] empty assistant content — retrying once');
     response = await deepseekV4FlashChat(chatParams, { thinking: false });
-    recordLlmCall(1);
     data = parseDeepseekAssistantJson(response, 'followup');
   }
   throwIfSafetyPayload(data);
@@ -1112,7 +1113,7 @@ Return ONLY a JSON object: { "questions": [ { "question": "...", "options": ["..
     const result = await model.generateContent(
       `Topic: "${nodeLabel}"\n\n${contentBlock}\n\nGenerate 5 quiz questions on this.`
     );
-    recordLlmCall(1);
+    recordGeminiCall(1);
 
     console.log(`[generateQuiz] "${nodeLabel}" ? ${Date.now() - t0}ms`);
     const data = JSON.parse(result.response.text());
@@ -1167,7 +1168,7 @@ Return ONLY JSON: { "rows": [ { "dimension": string, "picks": string[] } ] }`;
         labelsPerSubject,
       })}`,
     );
-    recordLlmCall(1);
+    recordGeminiCall(1);
     const data = JSON.parse(result.response.text());
     if (typeof data?.error === 'string') {
       throw makeGeminiGraphGuardrailRefusal(data.error);
@@ -1229,7 +1230,6 @@ Rules:
     response_format: { type: 'json_object' },
     temperature: 0.35,
   });
-  recordLlmCall(1);
 
   const data = parseDeepseekAssistantJson(response, 'compare');
   throwIfSafetyPayload(data);

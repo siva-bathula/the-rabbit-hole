@@ -1,5 +1,4 @@
 import { XMLParser } from 'fast-xml-parser';
-import { recordLlmCall } from '../lib/llmMetrics.js';
 import { deepseekV4FlashChat, parseDeepseekAssistantJson } from './deepseek.js';
 
 // Indian news RSS feeds — tried in order, first to return ≥3 valid headlines wins
@@ -302,8 +301,6 @@ Return ONLY a JSON object: { "topics": [ { "label": "...", "headline": "..." }, 
     LLM_TIMEOUT_MS,
     'DeepSeek trending topics',
   );
-  recordLlmCall(1);
-
   const data = parseDeepseekAssistantJson(response, 'trending');
   if (!Array.isArray(data.topics) || data.topics.length === 0) {
     throw new Error('Invalid topics response from AI');
