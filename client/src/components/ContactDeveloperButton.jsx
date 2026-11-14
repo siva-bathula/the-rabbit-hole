@@ -8,9 +8,10 @@ export default function ContactDeveloperButton({ className = '', compact = false
   return (
     <a
       href={developerMailtoHref()}
+      title={compact ? 'Contact developer' : undefined}
       className={`inline-flex items-center gap-1.5 rounded-xl text-sm font-medium transition-all
         text-white/50 hover:text-white/85 hover:bg-white/10 border border-white/10 hover:border-white/20
-        ${compact ? 'px-2.5 py-1.5 sm:px-3 sm:py-2' : 'px-4 py-2'}
+        ${compact ? 'px-2 py-1.5 flex-shrink-0' : 'px-4 py-2'}
         ${className}`}
       style={{ background: 'rgba(255,255,255,0.04)' }}
     >
@@ -23,10 +24,7 @@ export default function ContactDeveloperButton({ className = '', compact = false
         />
       </svg>
       {compact ? (
-        <>
-          <span className="hidden sm:inline">Contact</span>
-          <span className="sr-only">Contact developer</span>
-        </>
+        <span className="sr-only">Contact developer</span>
       ) : (
         'Contact developer'
       )}

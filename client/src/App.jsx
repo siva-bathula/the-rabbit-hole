@@ -1094,51 +1094,56 @@ export default function App() {
 
           {/* Top bar — floats over both modes */}
           <div
-            className={`absolute left-0 right-0 z-30 pointer-events-none
-              flex flex-col sm:flex-row sm:items-center sm:justify-between
-              px-4 sm:px-5 pt-2.5 pb-2 gap-1.5 sm:gap-0 ${
+            className={`absolute left-0 right-0 z-30 pointer-events-none overflow-hidden
+              flex flex-row items-center justify-between gap-2
+              px-4 sm:px-5 pt-2.5 pb-2 ${
                 feedbackBannerVisible ? 'top-11' : 'top-0'
               }`}
             style={{ background: mode === 'slow' ? 'rgba(7,7,15,0.92)' : 'rgba(7,7,15,0.75)' }}
           >
             {/* Row 1 (both mobile & desktop): New Search + current topic */}
-            <div className="flex items-center justify-between sm:justify-start gap-3 pointer-events-auto">
+            <div className="flex items-center gap-2 pointer-events-auto min-w-0 flex-1">
               <button
+                type="button"
                 onClick={handleNewSearch}
-                className="flex items-center gap-2 px-3 py-2 rounded-xl text-white/60
-                  hover:text-white hover:bg-white/10 transition-all text-sm font-medium flex-shrink-0"
+                title="New search"
+                aria-label="New search"
+                className="flex items-center justify-center p-2 rounded-xl text-white/60
+                  hover:text-white hover:bg-white/10 transition-all flex-shrink-0"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                 </svg>
-                New Search
               </button>
               <div
-                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-white/70 truncate"
+                className="min-w-0 flex-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-white/70 truncate"
                 style={{
                   background: 'rgba(255,255,255,0.05)',
                   border: '1px solid rgba(255,255,255,0.1)',
-                  maxWidth: '160px',
+                  maxWidth: 'min(160px, 100%)',
                 }}
               >
                 {currentTopic}
               </div>
             </div>
 
-            {/* Row 2 (mobile) / right side (desktop): Sessions + mode toggle + node count */}
-            <div className="flex items-center justify-between sm:justify-end gap-2 sm:gap-3 pointer-events-auto">
+            {/* Row 2 (mobile) / right side (desktop): actions — icon-only below sm */}
+            <div
+              className="flex items-center flex-nowrap justify-end gap-1.5 pointer-events-auto min-w-0 shrink sm:max-w-none max-w-[min(52vw,17.5rem)] overflow-x-auto overflow-y-hidden [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
               <ContactDeveloperButton compact />
 
               {/* Share button */}
               <button
                 onClick={handleShare}
                 disabled={isSharing || graphData.nodes.length === 0}
-                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-sm font-medium transition-all border
+                className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
                   border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10
                   disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: 'rgba(34,211,238,0.07)' }}
-                title="Copy shareable link"
+                title={shareCopied ? 'Link copied' : 'Copy shareable link'}
+                aria-label={shareCopied ? 'Link copied' : 'Share'}
               >
                 {isSharing ? (
                   <div className="w-4 h-4 rounded-full border-2 border-cyan-400/30 border-t-cyan-400 animate-spin" />
@@ -1152,7 +1157,6 @@ export default function App() {
                       d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                   </svg>
                 )}
-                <span className="hidden sm:inline">{shareCopied ? 'Copied!' : 'Share'}</span>
               </button>
 
               <button
@@ -1160,10 +1164,11 @@ export default function App() {
                 onClick={handlePullLevelClick}
                 disabled={pullLevelDisabled}
                 title={pullLevelTitle}
-                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-sm font-medium transition-all border
+                className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
                   border-emerald-500/35 text-emerald-200/95 hover:bg-emerald-500/10
                   disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: 'rgba(16, 185, 129, 0.08)' }}
+                aria-label={pullLevelTitle}
               >
                 {isPullingLevel ? (
                   <div className="w-4 h-4 rounded-full border-2 border-emerald-400/30 border-t-emerald-400 animate-spin" />
@@ -1183,13 +1188,6 @@ export default function App() {
                     <circle cx="17" cy="15.5" r="2.5" strokeWidth={2} />
                   </svg>
                 )}
-                <span className="hidden sm:inline">
-                  {isPullingLevel
-                    ? pullProgress.total > 0
-                      ? `Pulling ${pullProgress.done}/${pullProgress.total}`
-                      : 'Pulling…'
-                    : 'Pull this level'}
-                </span>
               </button>
 
               <button
@@ -1197,16 +1195,16 @@ export default function App() {
                 onClick={handleExportHtml}
                 disabled={graphData.nodes.length === 0 || isExploring}
                 title="Download explored content as HTML"
-                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-sm font-medium transition-all border
+                className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
                   border-yellow-400/30 text-yellow-300 hover:bg-yellow-500/10
                   disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ background: 'rgba(250, 204, 21, 0.07)' }}
+                aria-label="Export HTML"
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                <span className="hidden sm:inline">Export HTML</span>
               </button>
 
               {comparisonSubjects?.length >= 2 && (
@@ -1215,12 +1213,16 @@ export default function App() {
                   onClick={() => setComparePanelOpen(true)}
                   disabled={isExploring || graphData.nodes.length === 0}
                   title="Side-by-side comparison across aligned topics"
-                  className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-sm font-medium transition-all border
+                  className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
                     border-violet-500/35 text-violet-200/95 hover:bg-violet-500/10
                     disabled:opacity-35 disabled:cursor-not-allowed"
                   style={{ background: 'rgba(139,92,246,0.08)' }}
+                  aria-label="Compare topics"
                 >
-                  <span className="text-xs sm:text-sm font-semibold">Compare</span>
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+                  </svg>
                 </button>
               )}
 
@@ -1229,10 +1231,11 @@ export default function App() {
                 onClick={openPathReplay}
                 disabled={!canReplay || isExploring || graphData.nodes.length === 0}
                 title={canReplay ? 'Animate the nodes you visited in order' : 'Visit at least two nodes to replay'}
-                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-sm font-medium transition-all border
+                className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
                   border-amber-500/35 text-amber-200/90 hover:bg-amber-500/10
                   disabled:opacity-35 disabled:cursor-not-allowed"
                 style={{ background: 'rgba(251,191,36,0.08)' }}
+                aria-label="Replay my path"
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -1240,25 +1243,25 @@ export default function App() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                <span className="hidden sm:inline">Replay my path</span>
-                <span className="sm:hidden">Replay</span>
               </button>
 
               {/* Sessions pill */}
               {sessions.length > 0 && (
                 <button
+                  type="button"
                   onClick={() => setSessionsOpen(true)}
-                  className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-sm font-medium transition-all border
+                  title="Saved sessions"
+                  className="flex items-center gap-1 p-1.5 pr-2 rounded-xl border flex-shrink-0
                     border-purple-500/30 text-purple-300 hover:bg-purple-500/10"
                   style={{ background: 'rgba(168,85,247,0.08)' }}
+                  aria-label={`Saved sessions (${sessions.length})`}
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                       d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                   </svg>
-                  Sessions
                   <span
-                    className="flex items-center justify-center w-5 h-5 rounded-full text-xs font-bold text-white"
+                    className="flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full text-xs font-bold text-white"
                     style={{ background: 'rgba(168,85,247,0.6)' }}
                   >
                     {sessions.length}
@@ -1268,9 +1271,12 @@ export default function App() {
 
               {/* Mode toggle — always shows current mode, both states visually prominent */}
               <button
+                type="button"
                 onClick={handleModeToggle}
                 disabled={isExploring}
-                className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-sm font-medium transition-all border
+                title={mode === 'slow' ? 'Switch to graph view' : 'Switch to slow burn'}
+                aria-label={mode === 'slow' ? 'Slow burn mode' : 'Graph view mode'}
+                className={`flex items-center justify-center p-2 rounded-xl border flex-shrink-0
                   disabled:opacity-40 disabled:cursor-not-allowed
                   ${mode === 'slow'
                     ? 'bg-purple-600/20 border-purple-500/35 text-purple-300 hover:bg-purple-600/30'
@@ -1279,28 +1285,20 @@ export default function App() {
               >
                 {mode === 'slow' ? (
                   <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                         d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                     </svg>
-                    Slow Burn
                   </>
                 ) : (
                   <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                         d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
-                    Graph View
                   </>
                 )}
               </button>
-
-              {mode === 'fast' && (
-                <span className="text-xs text-white/30 hidden sm:inline">
-                  {graphData.nodes.length} nodes
-                </span>
-              )}
             </div>
           </div>
 
