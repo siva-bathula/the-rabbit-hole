@@ -35,6 +35,7 @@ import {
 import { isNewsAnchoredSessionTopic } from './lib/newsTopic.js';
 import { graphPrimaryRootId } from './lib/graphRoot.js';
 import { trackScreenView } from './firebase.js';
+import { logSearchStart } from './lib/logSearch.js';
 
 /** Same step as PathReplayOverlay — graph view zoom buttons */
 const GRAPH_VIEW_ZOOM_IN = 1.32;
@@ -784,9 +785,26 @@ export default function App() {
 
   const handleSearch = useCallback(
     async (input) => {
-      // Plain string, or trending chip: { query, displayLabel, groundingContext?, articleUrl?, fromTrending? }
+      // Plain string, or chip payload: { query, displayLabel, source?, groundingContext?, articleUrl?, fromTrending? }
       const displayLabel = typeof input === 'string' ? input : input.displayLabel;
       const query = typeof input === 'string' ? input : input.query;
+      const searchSource =
+        typeof input === 'string'
+          ? 'search_bar'
+          : input.fromTrending
+            ? 'trending_chip'
+            : input.source === 'popular_chip'
+              ? 'popular_chip'
+              : 'search_bar';
+      const chipLabel =
+        searchSource === 'search_bar'
+          ? null
+          : (typeof input === 'string' ? null : input.displayLabel || input.chipLabel || null);
+      logSearchStart({
+        query: typeof input === 'string' ? input : (query || displayLabel || ''),
+        source: searchSource,
+        chipLabel,
+      });
       const gc = typeof input === 'string' ? '' : (input.groundingContext || '');
       const articleUrl =
         typeof input === 'string' ? '' : String(input.articleUrl || '').trim();

@@ -12,11 +12,13 @@ import deepenRouter from './routes/deepen.js';
 import trendingRouter from './routes/trending.js';
 import quizRouter from './routes/quiz.js';
 import shareRouter from './routes/share.js';
+import searchLogRouter from './routes/searchLog.js';
 import compareRouter from './routes/compare.js';
 import { followupPostHandler } from './routes/followup.js';
 import { startTrendingRefresh } from './services/trending.js';
 import { probeGeminiFlashGraphOnStartup } from './services/deepseek.js';
 import { startLlmMetrics } from './lib/llmMetrics.js';
+import { isSearchLogEnabled } from './lib/searchLog.js';
 import { FirestoreRateLimitStore } from './lib/rateLimitFirestoreStore.js';
 import { startRateLimitFirestoreCleanup } from './lib/rateLimitFirestoreCleanup.js';
 import { resolveTurnstileSessionSignerSecret } from './lib/rhTurnstileSession.js';
@@ -250,6 +252,7 @@ app.use('/api/deepen', requireTurnstile, deepenRouter);
 app.use('/api/trending', trendingRouter);
 app.use('/api/quiz', requireTurnstile, quizRouter);
 app.use('/api/share', shareRouter);
+app.use('/api/search-log', searchLogRouter);
 app.use('/api/compare', requireTurnstile, compareRouter);
 app.post('/api/followup', requireTurnstile, followupPostHandler);
 app.get('/api/health', (_, res) => res.json({ status: 'ok' }));
@@ -317,6 +320,10 @@ const server = app.listen(PORT, () => {
   startTrendingRefresh();
   if (useFirestoreRateLimit) startRateLimitFirestoreCleanup();
   startLlmMetrics();
+  console.log(
+    '[search-log] %s — Firestore collection search_logs (SEARCH_LOG_ENABLED=0 to disable)',
+    isSearchLogEnabled() ? 'enabled' : 'disabled',
+  );
   probeGeminiFlashGraphOnStartup().catch((e) =>
     console.error('[gemini] startup probe unexpected error:', e?.message || e),
   );

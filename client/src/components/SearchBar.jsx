@@ -210,7 +210,11 @@ export default function SearchBar({
   };
 
   const handleSuggestionClick = (s) => {
-    runSearch(s);
+    const label = String(s || '').trim();
+    if (!label || isLoading) return;
+    setTopic(label);
+    setSubmittedTopic(label);
+    onSearch({ query: label, displayLabel: label, source: 'popular_chip' });
   };
 
   const sharedSessions = useMemo(
@@ -577,6 +581,7 @@ export default function SearchBar({
                               onSearch({
                                 query: `${label} — ${headline}`,
                                 displayLabel: label,
+                                source: 'trending_chip',
                                 groundingContext,
                                 articleUrl,
                                 fromTrending: true,
