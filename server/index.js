@@ -19,6 +19,7 @@ import { startTrendingRefresh } from './services/trending.js';
 import { probeGeminiFlashGraphOnStartup } from './services/deepseek.js';
 import { startLlmMetrics } from './lib/llmMetrics.js';
 import { isSearchLogEnabled } from './lib/searchLog.js';
+import { createRecordIpUsageMiddleware, isIpUsageLogEnabled } from './lib/ipUsageLog.js';
 import { FirestoreRateLimitStore } from './lib/rateLimitFirestoreStore.js';
 import { startRateLimitFirestoreCleanup } from './lib/rateLimitFirestoreCleanup.js';
 import { resolveTurnstileSessionSignerSecret } from './lib/rhTurnstileSession.js';
@@ -239,6 +240,8 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(createRecordIpUsageMiddleware());
+
 // Apply limiter to every /api request (explicit guard — same as mount, avoids edge cases with sub-mount paths).
 app.use((req, res, next) => {
   if (!req.path.startsWith('/api')) return next();
@@ -323,6 +326,10 @@ const server = app.listen(PORT, () => {
   console.log(
     '[search-log] %s — Firestore collection search_logs (SEARCH_LOG_ENABLED=0 to disable)',
     isSearchLogEnabled() ? 'enabled' : 'disabled',
+  );
+  console.log(
+    '[ip-usage] %s — Firestore collection client_ip_usage (IP_USAGE_LOG_ENABLED=0 to disable)',
+    isIpUsageLogEnabled() ? 'enabled' : 'disabled',
   );
   probeGeminiFlashGraphOnStartup().catch((e) =>
     console.error('[gemini] startup probe unexpected error:', e?.message || e),
