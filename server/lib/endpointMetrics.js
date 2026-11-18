@@ -16,67 +16,42 @@ export function isEndpointMetricsEnabled() {
   return !isExplicitlyDisabled();
 }
 
-let pendingExplain = 0;
-let pendingExpand = 0;
-let pendingSearchStart = 0;
+/**
+ * Persist increment immediately (fire-and-forget). Survives short-lived Cloud Run
+ * instances better than batched in-memory counters flushed every 60s.
+ */
+function incrementMetricDoc(docId, n = 1) {
+  if (!isEndpointMetricsEnabled() || n <= 0) return;
+
+  void (async () => {
+    const firestore = getSharedFirestore();
+    await firestore.collection(COLLECTION).doc(docId).set(
+      {
+        total: FieldValue.increment(n),
+        updatedAt: Timestamp.now(),
+      },
+      { merge: true },
+    );
+    if (String(process.env.NODE_ENV ?? '').trim() !== 'production') {
+      console.log('[endpoint-metrics] +%s %s', n, docId);
+    }
+  })().catch((err) => {
+    console.error(
+      '[endpoint-metrics] Firestore increment failed (%s):',
+      docId,
+      err?.code || err?.message || err,
+    );
+  });
+}
 
 export function recordExplainRequest(n = 1) {
-  if (!isEndpointMetricsEnabled() || n <= 0) return;
-  pendingExplain += n;
+  incrementMetricDoc(DOC_EXPLAIN, n);
 }
 
 export function recordExpandRequest(n = 1) {
-  if (!isEndpointMetricsEnabled() || n <= 0) return;
-  pendingExpand += n;
+  incrementMetricDoc(DOC_EXPAND, n);
 }
 
 export function recordSearchStart(n = 1) {
-  if (!isEndpointMetricsEnabled() || n <= 0) return;
-  pendingSearchStart += n;
-}
-
-/** Returns counts flushed; restores pending on failure. */
-export function takePendingEndpointMetrics() {
-  const explainN = pendingExplain;
-  const expandN = pendingExpand;
-  const searchN = pendingSearchStart;
-  pendingExplain = 0;
-  pendingExpand = 0;
-  pendingSearchStart = 0;
-  return { explainN, expandN, searchN };
-}
-
-export function restorePendingEndpointMetrics({ explainN, expandN, searchN }) {
-  pendingExplain += explainN;
-  pendingExpand += expandN;
-  pendingSearchStart += searchN;
-}
-
-export function hasPendingEndpointMetrics() {
-  return pendingExplain > 0 || pendingExpand > 0 || pendingSearchStart > 0;
-}
-
-/** @param {import('@google-cloud/firestore').WriteBatch} batch */
-export function addEndpointMetricsToBatch(batch, firestore, { explainN, expandN, searchN }, now) {
-  if (explainN > 0) {
-    batch.set(
-      firestore.collection(COLLECTION).doc(DOC_EXPLAIN),
-      { total: FieldValue.increment(explainN), updatedAt: now },
-      { merge: true },
-    );
-  }
-  if (expandN > 0) {
-    batch.set(
-      firestore.collection(COLLECTION).doc(DOC_EXPAND),
-      { total: FieldValue.increment(expandN), updatedAt: now },
-      { merge: true },
-    );
-  }
-  if (searchN > 0) {
-    batch.set(
-      firestore.collection(COLLECTION).doc(DOC_SEARCH_START),
-      { total: FieldValue.increment(searchN), updatedAt: now },
-      { merge: true },
-    );
-  }
+  incrementMetricDoc(DOC_SEARCH_START, n);
 }

@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { isExploreDebug } from '../lib/exploreDebugLog.js';
 import { ContentSafetyError, throwIfSafetyPayload } from '../lib/contentSafety.js';
+import { recordExplainRequest, recordExpandRequest } from '../lib/endpointMetrics.js';
 import { recordGeminiCall, recordDeepseekCall } from '../lib/llmMetrics.js';
 
 const client = new OpenAI({
@@ -664,6 +665,7 @@ export async function expandNode(
   sessionTopic = '',
   groundingContext = '',
 ) {
+  recordExpandRequest();
   const t0 = Date.now();
 
   const { systemExtra, userPrefix } = newsAnchoredAugmentation(sessionTopic, 'expand');
@@ -765,6 +767,7 @@ export async function explainNode(
   sessionTopic = '',
   groundingContext = '',
 ) {
+  recordExplainRequest();
   const isRoot = !parentContext || parentContext === nodeLabel;
   const needsCode = isCodeNode(nodeLabel) || isCodeRootTopic(rootTopic);
   const { systemExtra, userPrefix } = newsAnchoredAugmentation(sessionTopic, 'explain');

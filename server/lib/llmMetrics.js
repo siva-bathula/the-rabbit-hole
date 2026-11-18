@@ -1,11 +1,5 @@
 import { FieldValue, Timestamp } from '@google-cloud/firestore';
 import { getSharedFirestore } from './firestoreClient.js';
-import {
-  addEndpointMetricsToBatch,
-  isEndpointMetricsEnabled,
-  restorePendingEndpointMetrics,
-  takePendingEndpointMetrics,
-} from './endpointMetrics.js';
 
 const COLLECTION = 'app_metrics';
 const DOC_GEMINI = 'gemini_calls';
@@ -44,21 +38,13 @@ export function recordDeepseekCall(n = 1) {
 
 /** Always resolves; restores pending counts on failure. */
 export function flushLlmMetricsNow() {
-  const llmOn = isLlmMetricsEnabled();
-  const endpointOn = isEndpointMetricsEnabled();
-  if (!llmOn && !endpointOn) return Promise.resolve();
+  if (!isLlmMetricsEnabled()) return Promise.resolve();
 
-  const geminiN = llmOn ? pendingGemini : 0;
-  const deepseekN = llmOn ? pendingDeepseek : 0;
-  if (llmOn) {
-    pendingGemini = 0;
-    pendingDeepseek = 0;
-  }
-
-  const endpoint = endpointOn ? takePendingEndpointMetrics() : { explainN: 0, expandN: 0, searchN: 0 };
-  const hasLlm = geminiN > 0 || deepseekN > 0;
-  const hasEndpoint = endpoint.explainN > 0 || endpoint.expandN > 0 || endpoint.searchN > 0;
-  if (!hasLlm && !hasEndpoint) return Promise.resolve();
+  const geminiN = pendingGemini;
+  const deepseekN = pendingDeepseek;
+  pendingGemini = 0;
+  pendingDeepseek = 0;
+  if (geminiN <= 0 && deepseekN <= 0) return Promise.resolve();
 
   return (async () => {
     const firestore = getSharedFirestore();
@@ -79,16 +65,12 @@ export function flushLlmMetricsNow() {
         { merge: true },
       );
     }
-    addEndpointMetricsToBatch(batch, firestore, endpoint, now);
 
     await batch.commit();
   })().catch((err) => {
-    if (llmOn) {
-      pendingGemini += geminiN;
-      pendingDeepseek += deepseekN;
-    }
-    if (endpointOn) restorePendingEndpointMetrics(endpoint);
-    console.error('[app-metrics] flush failed:', err?.message || err);
+    pendingGemini += geminiN;
+    pendingDeepseek += deepseekN;
+    console.error('[llm-metrics] flush failed:', err?.message || err);
   });
 }
 
@@ -97,7 +79,7 @@ function onShutdown() {
 }
 
 export function startLlmMetrics() {
-  if (started || (!isLlmMetricsEnabled() && !isEndpointMetricsEnabled())) return;
+  if (started || !isLlmMetricsEnabled()) return;
   started = true;
 
   setInterval(() => {

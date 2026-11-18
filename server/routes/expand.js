@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { expandNode } from '../services/deepseek.js';
 import { sendRouteError } from '../lib/contentSafety.js';
-import { recordExpandRequest } from '../lib/endpointMetrics.js';
 
 const router = Router();
 
@@ -11,8 +10,6 @@ router.post('/', async (req, res) => {
   if (!nodeId || !nodeLabel) {
     return res.status(400).json({ error: 'nodeId and nodeLabel are required' });
   }
-
-  recordExpandRequest();
 
   try {
     const data = await expandNode(

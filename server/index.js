@@ -333,7 +333,7 @@ const server = app.listen(PORT, () => {
     isIpUsageLogEnabled() ? 'enabled' : 'disabled',
   );
   console.log(
-    '[endpoint-metrics] %s — app_metrics: api_explain_calls, api_expand_calls, search_starts (ENDPOINT_METRICS_ENABLED=0 to disable)',
+    '[endpoint-metrics] %s — app_metrics: api_explain_calls, api_expand_calls, search_starts (immediate; ENDPOINT_METRICS_ENABLED=0 to disable)',
     isEndpointMetricsEnabled() ? 'enabled' : 'disabled',
   );
   probeGeminiFlashGraphOnStartup().catch((e) =>

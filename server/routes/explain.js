@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { explainNode } from '../services/deepseek.js';
 import { sendRouteError } from '../lib/contentSafety.js';
-import { recordExplainRequest } from '../lib/endpointMetrics.js';
 
 const router = Router();
 
@@ -188,8 +187,6 @@ router.post('/', async (req, res) => {
   if (!nodeLabel) {
     return res.status(400).json({ error: 'nodeLabel is required' });
   }
-
-  recordExplainRequest();
 
   const parent = parentContext || '';
   const root = rootTopic || '';
