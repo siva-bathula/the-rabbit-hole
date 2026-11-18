@@ -18,6 +18,7 @@ import { followupPostHandler } from './routes/followup.js';
 import { startTrendingRefresh } from './services/trending.js';
 import { probeGeminiFlashGraphOnStartup } from './services/deepseek.js';
 import { startLlmMetrics } from './lib/llmMetrics.js';
+import { isEndpointMetricsEnabled } from './lib/endpointMetrics.js';
 import { isSearchLogEnabled } from './lib/searchLog.js';
 import { createRecordIpUsageMiddleware, isIpUsageLogEnabled } from './lib/ipUsageLog.js';
 import { FirestoreRateLimitStore } from './lib/rateLimitFirestoreStore.js';
@@ -330,6 +331,10 @@ const server = app.listen(PORT, () => {
   console.log(
     '[ip-usage] %s — Firestore collection client_ip_usage (IP_USAGE_LOG_ENABLED=0 to disable)',
     isIpUsageLogEnabled() ? 'enabled' : 'disabled',
+  );
+  console.log(
+    '[endpoint-metrics] %s — app_metrics: api_explain_calls, api_expand_calls, search_starts (ENDPOINT_METRICS_ENABLED=0 to disable)',
+    isEndpointMetricsEnabled() ? 'enabled' : 'disabled',
   );
   probeGeminiFlashGraphOnStartup().catch((e) =>
     console.error('[gemini] startup probe unexpected error:', e?.message || e),

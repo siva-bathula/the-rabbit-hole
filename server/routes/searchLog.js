@@ -1,14 +1,11 @@
 import { Router } from 'express';
 import { isSearchLogEnabled, recordSearchLog, SEARCH_SOURCES } from '../lib/searchLog.js';
+import { isEndpointMetricsEnabled, recordSearchStart } from '../lib/endpointMetrics.js';
 
 const router = Router();
 
 /** POST /api/search-log — log search-bar or chip search starts (no Turnstile). */
 router.post('/', (req, res) => {
-  if (!isSearchLogEnabled()) {
-    return res.status(204).end();
-  }
-
   const body = req.body && typeof req.body === 'object' ? req.body : {};
   const query = String(body.query || '').trim();
   const source = String(body.source || '').trim();
@@ -24,7 +21,14 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'invalid source' });
   }
 
-  void recordSearchLog({ query, source, chipLabel });
+  if (!isSearchLogEnabled() && !isEndpointMetricsEnabled()) {
+    return res.status(204).end();
+  }
+
+  recordSearchStart();
+  if (isSearchLogEnabled()) {
+    void recordSearchLog({ query, source, chipLabel });
+  }
   return res.status(204).end();
 });
 
