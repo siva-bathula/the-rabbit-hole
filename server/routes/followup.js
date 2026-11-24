@@ -31,6 +31,13 @@ export async function followupPostHandler(req, res) {
     });
   }
 
+  const latestUser = [...validMessages].reverse().find((m) => m.role === 'user');
+  const followUpLog = {
+    req,
+    queryText: latestUser?.content || '',
+    source: /** @type {const} */ ('followup'),
+  };
+
   try {
     const result = await followUpChat({
       branchNodeLabel: branchNodeLabel.trim(),
@@ -42,6 +49,6 @@ export async function followupPostHandler(req, res) {
     });
     res.json(result);
   } catch (err) {
-    sendRouteError(res, err, 'followup', 'Follow-up failed');
+    sendRouteError(res, err, 'followup', 'Follow-up failed', followUpLog);
   }
 }

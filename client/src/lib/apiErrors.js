@@ -18,6 +18,7 @@ export function messageFromPayload(data, fallback) {
 export function apiErrorFromPayload(data, fallback) {
   const err = new Error(messageFromPayload(data, fallback));
   if (data?.code) err.code = data.code;
+  if (typeof data?.title === 'string' && data.title.trim()) err.title = data.title.trim();
   return err;
 }
 

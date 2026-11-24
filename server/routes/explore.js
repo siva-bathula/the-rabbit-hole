@@ -81,8 +81,10 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Topic is required' });
   }
 
+  const topicTrim = topic.trim();
+  const safetyLog = { req, queryText: topicTrim, source: /** @type {const} */ ('search') };
+
   try {
-    const topicTrim = topic.trim();
     const base =
       typeof groundingContext === 'string' ? groundingContext.trim() : '';
 
@@ -115,7 +117,7 @@ router.post('/', async (req, res) => {
       );
 
       for (const raw of graphs) {
-        if (respondIfGraphSafetyPayload(res, raw)) return;
+        if (respondIfGraphSafetyPayload(res, raw, safetyLog)) return;
         if (!raw.nodes || !raw.edges) {
           if (isExploreDebug()) {
             console.error('[explore-debug] /api/explore comparison: invalid subgraph', {
@@ -160,7 +162,7 @@ router.post('/', async (req, res) => {
       groundingContext: effectiveGrounding,
     });
 
-    if (respondIfGraphSafetyPayload(res, raw)) return;
+    if (respondIfGraphSafetyPayload(res, raw, safetyLog)) return;
 
     if (!raw.nodes || !raw.edges) {
       if (isExploreDebug()) {
@@ -185,7 +187,7 @@ router.post('/', async (req, res) => {
         stack: err?.stack,
       });
     }
-    sendRouteError(res, err, 'explore', 'Failed to generate knowledge graph');
+    sendRouteError(res, err, 'explore', 'Failed to generate knowledge graph', safetyLog);
   }
 });
 

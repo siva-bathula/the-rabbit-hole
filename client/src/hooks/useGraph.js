@@ -68,6 +68,7 @@ export function useGraph() {
   const [isExploring, setIsExploring] = useState(false);
   const [error, setError] = useState(null);
   const [errorCode, setErrorCode] = useState(null);
+  const [errorTitle, setErrorTitle] = useState(null);
   const [rootLabel, setRootLabel] = useState('');
   const [comparisonSubjects, setComparisonSubjects] = useState(null);
   const [comparisonAlignment, setComparisonAlignment] = useState(null);
@@ -100,6 +101,7 @@ export function useGraph() {
     setIsExploring(true);
     setError(null);
     setErrorCode(null);
+    setErrorTitle(null);
     setSelectedNode(null);
     setExpandedNodes(new Set());
     // Clear graph immediately so Graph.jsx resets its seeded flag
@@ -221,6 +223,7 @@ export function useGraph() {
         : err?.message || 'Something went wrong — please try again.';
       setError(message);
       setErrorCode(err.code || null);
+      setErrorTitle(err.title || null);
       return null;
     } finally {
       clearTimeout(fetchTimeoutId);
@@ -329,6 +332,7 @@ export function useGraph() {
       } catch (err) {
         setError(err.message);
         setErrorCode(err.code || null);
+        setErrorTitle(err.title || null);
       } finally {
         setExpandingNodeId(null);
       }
@@ -406,11 +410,13 @@ export function useGraph() {
     setExpandingNodeId(null);
     setError(null);
     setErrorCode(null);
+    setErrorTitle(null);
   }, []);
 
   const clearError = useCallback(() => {
     setError(null);
     setErrorCode(null);
+    setErrorTitle(null);
   }, []);
 
   const reset = useCallback(() => {
@@ -420,6 +426,7 @@ export function useGraph() {
     setExpandingNodeId(null);
     setError(null);
     setErrorCode(null);
+    setErrorTitle(null);
     setRootLabel('');
     nodesRef.current = [];
     linksRef.current = [];
@@ -497,6 +504,7 @@ export function useGraph() {
     isExploring,
     error,
     errorCode,
+    errorTitle,
     clearError,
     rootLabel,
     groundingContext: groundingContextRef.current,

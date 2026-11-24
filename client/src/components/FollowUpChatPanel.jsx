@@ -28,6 +28,7 @@ export default function FollowUpChatPanel({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(null);
   const [errorKind, setErrorKind] = useState('error');
+  const [errorTitle, setErrorTitle] = useState(null);
   const [offTopicNote, setOffTopicNote] = useState(null);
   const bottomRef = useRef(null);
   const lastQuestionRef = useRef('');
@@ -47,6 +48,7 @@ export default function FollowUpChatPanel({
       setSending(true);
       setError(null);
       setErrorKind('error');
+      setErrorTitle(null);
       setOffTopicNote(null);
 
       const prior = collectFollowUpMessages(nodes, links, branchAnchorId);
@@ -86,6 +88,7 @@ export default function FollowUpChatPanel({
       } catch (err) {
         setError(err.message || 'Something went wrong.');
         setErrorKind(err.code ? errorKindFromPayload({ code: err.code }) : 'error');
+        setErrorTitle(err.title || null);
       } finally {
         setSending(false);
       }
@@ -206,10 +209,12 @@ export default function FollowUpChatPanel({
             {error && (
               <RequestNotice
                 kind={errorKind}
+                title={errorTitle}
                 message={error}
                 onRetry={() => {
                   setError(null);
                   setErrorKind('error');
+                  setErrorTitle(null);
                   handleSend();
                 }}
               />

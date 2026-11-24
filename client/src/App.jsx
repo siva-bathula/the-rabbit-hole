@@ -250,6 +250,7 @@ export default function App() {
     isExploring,
     error,
     errorCode,
+    errorTitle,
     clearError,
     rootLabel,
     groundingContext,
@@ -953,7 +954,11 @@ export default function App() {
           onOpenSharedGraph={openSharedGraph}
           requestNotice={
             error
-              ? { message: error, kind: errorKindFromError({ code: errorCode }) }
+              ? {
+                  message: error,
+                  kind: errorKindFromError({ code: errorCode }),
+                  title: errorTitle || undefined,
+                }
               : null
           }
           onCancelExplore={cancelExplore}
@@ -1324,6 +1329,7 @@ export default function App() {
             <div className="absolute top-16 left-1/2 -translate-x-1/2 z-50 w-[min(100%,24rem)] px-4">
               <RequestNotice
                 kind={errorKindFromError({ code: errorCode })}
+                title={errorTitle || undefined}
                 message={error}
                 onRetry={clearError}
                 retryLabel="Dismiss"

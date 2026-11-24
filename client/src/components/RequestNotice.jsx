@@ -3,6 +3,7 @@
  */
 export default function RequestNotice({
   kind = 'error',
+  title,
   message,
   onRetry,
   retryLabel = 'Try again',
@@ -11,6 +12,7 @@ export default function RequestNotice({
   if (!message) return null;
 
   const isSafety = kind === 'content_safety';
+  const heading = title || (isSafety ? 'Misuse warning' : null);
 
   return (
     <div
@@ -55,6 +57,15 @@ export default function RequestNotice({
           )}
         </svg>
         <div className="min-w-0 flex-1">
+          {heading && (
+            <p
+              className={`font-semibold leading-snug mb-1.5 ${
+                isSafety ? 'text-amber-50/95' : 'text-white/90'
+              }`}
+            >
+              {heading}
+            </p>
+          )}
           <p className="leading-relaxed">{message}</p>
           {onRetry && (
             <button

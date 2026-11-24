@@ -396,6 +396,7 @@ export default function SearchBar({
               <div className="mt-4 text-left">
                 <RequestNotice
                   kind={requestNotice.kind}
+                  title={requestNotice.title}
                   message={requestNotice.message}
                 />
               </div>

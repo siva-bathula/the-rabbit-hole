@@ -1,7 +1,11 @@
 /** @typedef {'content_safety' | 'refused'} RefusalCode */
 
+import { recordMisuseAttempt } from './misuseLog.js';
+
+export const CONTENT_SAFETY_TITLE = 'Misuse warning';
+
 export const CONTENT_SAFETY_USER_MESSAGE =
-  "We can't help with that request. Rabbit Hole is for safe, general learning — try a different question or topic.";
+  'This request violates Rabbit Hole’s rules. Misusing the site to seek harmful, illegal, or abusive content is not allowed. Repeated misuse may lead to access being restricted. Please use Rabbit Hole only for safe, general learning — try a different question or topic.';
 
 export class ContentSafetyError extends Error {
   constructor(rawMessage) {
@@ -35,11 +39,23 @@ export function throwIfSafetyPayload(parsed) {
   }
 }
 
-/** @param {import('express').Response} res */
-export function sendContentSafetyResponse(res) {
+/**
+ * @param {import('express').Response} res
+ * @param {{ req?: import('express').Request, queryText?: string, source?: 'search' | 'followup' }} [logContext]
+ */
+export function sendContentSafetyResponse(res, logContext) {
+  if (logContext?.queryText?.trim()) {
+    void recordMisuseAttempt({
+      req: logContext.req,
+      queryText: logContext.queryText,
+      source: logContext.source === 'followup' ? 'followup' : 'search',
+    });
+  }
+
   return res.status(422).json({
     error: CONTENT_SAFETY_USER_MESSAGE,
     code: 'content_safety',
+    title: CONTENT_SAFETY_TITLE,
   });
 }
 
@@ -48,10 +64,11 @@ export function sendContentSafetyResponse(res) {
  * @param {unknown} raw
  * @param {string} routeLabel
  * @param {string} fallbackMessage
+ * @param {{ req?: import('express').Request, queryText?: string, source?: 'search' | 'followup' }} [logContext]
  */
-export function sendRouteError(res, err, routeLabel, fallbackMessage) {
+export function sendRouteError(res, err, routeLabel, fallbackMessage, logContext) {
   if (isContentSafetyError(err)) {
-    return sendContentSafetyResponse(res);
+    return sendContentSafetyResponse(res, logContext);
   }
   const msg = err instanceof Error ? err.message : String(err);
   console.error(`[${routeLabel}]`, msg);
@@ -67,10 +84,11 @@ export function sendRouteError(res, err, routeLabel, fallbackMessage) {
  * Graph JSON `{ error: "..." }` from Gemini — explore may receive without throwing.
  * @param {import('express').Response} res
  * @param {unknown} raw
+ * @param {{ req?: import('express').Request, queryText?: string, source?: 'search' | 'followup' }} [logContext]
  */
-export function respondIfGraphSafetyPayload(res, raw) {
+export function respondIfGraphSafetyPayload(res, raw, logContext) {
   if (!raw || typeof raw !== 'object' || typeof raw.error !== 'string') return false;
   if (!isContentSafetyMessage(raw.error)) return false;
-  sendContentSafetyResponse(res);
+  sendContentSafetyResponse(res, logContext);
   return true;
 }
