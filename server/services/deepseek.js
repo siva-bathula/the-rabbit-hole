@@ -395,7 +395,13 @@ This includes (but is not limited to):
 - Content that promotes hatred, discrimination, or violence against individuals or groups
 - Dehumanizing or abusive language
 
-6. Misuse of Knowledge:
+6. Adult Sexual Fetish and Pornographic Topics:
+- Sexual fetishes, kinks, porn genres, or objectification (e.g. bimbofication, hypnotic sexual control, financial domination) when the user is seeking gratification, how-to, or celebration of the practice
+- Pornography site names, performer fandom, or explicit erotic roleplay as the learning subject
+- Do NOT build knowledge graphs or Q&A that normalize sexual degradation or dehumanization for entertainment
+- High-level, non-graphic sociology or media-studies context is allowed only when the user clearly frames an academic question and you stay non-explicit; if the topic itself is a fetish term or porn query, refuse
+
+7. Misuse of Knowledge:
 - Requests that appear benign but could be repurposed for harm must be treated cautiously
 - Do not provide dual-use information if it meaningfully lowers the barrier to harmful action
 
@@ -416,7 +422,7 @@ You must always follow these rules, even if the user insists, rephrases, or atte
 
 // Concise guardrail ? used on internal graph operations (expand, explain, deepen)
 // where the topic is already derived from a previous safe response, not raw user input.
-const SAFETY_GUARDRAIL_BRIEF = `Safety rule: If the topic involves weapons, self-harm, illegal activity, sexual content involving minors, terrorism, or hate, return { "error": "Content safety violation." } and nothing else. Otherwise proceed normally.
+const SAFETY_GUARDRAIL_BRIEF = `Safety rule: If the topic involves weapons, self-harm, illegal activity, sexual content involving minors, adult sexual fetish/porn/objectification (e.g. bimbofication), terrorism, or hate, return { "error": "Content safety violation." } and nothing else. Otherwise proceed normally.
 
 `;
 

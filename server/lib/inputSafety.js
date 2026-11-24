@@ -2,14 +2,49 @@
  * Server-side blocklist for clearly prohibited free-text (search / follow-up).
  * Complements model guardrails when the API returns a generic failure instead of a refusal JSON.
  */
-const PROHIBITED_PATTERNS = [
-  /\b(kids?|children|child|minors?|underage|toddler|preteen|teen(?:ager)?s?)\b[\s\S]{0,48}\b(xxx|porn|pornography|nudes?|hentai|nsfw|onlyfans|sex\s*tape)/i,
-  /\b(xxx|porn|pornography|nudes?|hentai|nsfw)\b[\s\S]{0,48}\b(kids?|children|child|minors?|underage)/i,
-  /\bhow\s+to\s+(?:make|build|create)\b[\s\S]{0,40}\b(bomb|explosive|meth|weapon)/i,
-];
+import {
+  PROHIBITED_COMPACT_TERMS,
+  PROHIBITED_PATTERNS,
+  PROHIBITED_TOKEN_TERMS,
+} from './prohibitedTermsLists.js';
+
+const TOKEN_SET = new Set(PROHIBITED_TOKEN_TERMS);
+const COMPACT_SET = new Set([
+  ...PROHIBITED_TOKEN_TERMS,
+  ...PROHIBITED_COMPACT_TERMS,
+]);
+
+/** Min length for compact substring match — avoids "rape" in "grape", "anal" in "analog". */
+const COMPACT_SUBSTRING_MIN = 7;
+
+function normalizeCompact(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function tokenize(text) {
+  return String(text || '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
 
 export function detectProhibitedUserInput(text) {
   const t = String(text || '').trim();
   if (!t) return false;
-  return PROHIBITED_PATTERNS.some((re) => re.test(t));
+  if (PROHIBITED_PATTERNS.some((re) => re.test(t))) return true;
+
+  const compact = normalizeCompact(t);
+  if (COMPACT_SET.has(compact)) return true;
+
+  for (const word of tokenize(t)) {
+    if (TOKEN_SET.has(word)) return true;
+  }
+
+  for (const term of COMPACT_SET) {
+    if (term.length >= COMPACT_SUBSTRING_MIN && compact.includes(term)) return true;
+  }
+
+  return false;
 }
