@@ -1,5 +1,6 @@
 import { followUpChat } from '../services/deepseek.js';
-import { sendRouteError } from '../lib/contentSafety.js';
+import { detectProhibitedUserInput } from '../lib/inputSafety.js';
+import { sendContentSafetyResponse, sendRouteError } from '../lib/contentSafety.js';
 
 /** POST /api/followup — mounted directly from index.js (avoids sub-router 404 if process is stale). */
 export async function followupPostHandler(req, res) {
@@ -37,6 +38,10 @@ export async function followupPostHandler(req, res) {
     queryText: latestUser?.content || '',
     source: /** @type {const} */ ('followup'),
   };
+
+  if (detectProhibitedUserInput(followUpLog.queryText)) {
+    return sendContentSafetyResponse(res, followUpLog);
+  }
 
   try {
     const result = await followUpChat({

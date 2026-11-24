@@ -17,25 +17,59 @@ export class ContentSafetyError extends Error {
 /** Model / guardrail refusal text (not infra failures). */
 export function isContentSafetyMessage(message) {
   if (!message || typeof message !== 'string') return false;
-  return /content safety|cannot be processed as it violates|violates content safety guidelines/i.test(
-    message,
+  const m = message.toLowerCase();
+  return (
+    /content safety|cannot be processed as it violates|violates content safety guidelines/i.test(
+      message,
+    ) ||
+    /safety filter|blocked due to|prompt was blocked|candidate was blocked|harmful content/i.test(m) ||
+    /refus(e|al)|not allowed|can't help with that|cannot help with/i.test(m)
   );
+}
+
+/** Gemini SDK / API-level blocks when response.text() fails or finish reason is SAFETY. */
+export function isLikelyGeminiSafetyBlock(err) {
+  if (!err) return false;
+  const msg = String(err.message || err).toLowerCase();
+  return (
+    msg.includes('prohibited_content') ||
+    msg.includes('prohibited content') ||
+    msg.includes('text not available') ||
+    msg.includes('safety') ||
+    msg.includes('blockreason') ||
+    msg.includes('no content') ||
+    (msg.includes('candidate') && msg.includes('blocked')) ||
+    (msg.includes('prompt') && msg.includes('blocked')) ||
+    (msg.includes('googlegenerativeai error') && msg.includes('blocked'))
+  );
+}
+
+/** Turn Gemini / guardrail failures into ContentSafetyError for consistent API + logging. */
+export function normalizeToContentSafetyError(err) {
+  if (!err) return err;
+  if (isContentSafetyError(err)) return err;
+  if (isLikelyGeminiSafetyBlock(err) || isContentSafetyMessage(String(err.message || err))) {
+    const message = err instanceof Error ? err.message : String(err);
+    const out = new ContentSafetyError(message);
+    if (err instanceof Error && err.name) out.name = err.name;
+    return out;
+  }
+  return err;
 }
 
 export function isContentSafetyError(err) {
   if (!err) return false;
   if (err instanceof ContentSafetyError || err.name === 'ContentSafetyError') return true;
   if (err.name === 'GeminiGraphGuardrailRefusal') return true;
-  return isContentSafetyMessage(err.message);
+  return isContentSafetyMessage(err.message) || isLikelyGeminiSafetyBlock(err);
 }
 
 /** @param {unknown} parsed */
 export function throwIfSafetyPayload(parsed) {
   if (parsed && typeof parsed === 'object' && typeof parsed.error === 'string') {
-    if (isContentSafetyMessage(parsed.error)) {
-      throw new ContentSafetyError(parsed.error);
-    }
-    throw new Error(parsed.error);
+    const errText = parsed.error.trim();
+    if (!errText) return;
+    throw new ContentSafetyError(errText);
   }
 }
 
@@ -67,10 +101,14 @@ export function sendContentSafetyResponse(res, logContext) {
  * @param {{ req?: import('express').Request, queryText?: string, source?: 'search' | 'followup' }} [logContext]
  */
 export function sendRouteError(res, err, routeLabel, fallbackMessage, logContext) {
-  if (isContentSafetyError(err)) {
+  const safetyErr = normalizeToContentSafetyError(err);
+  if (isContentSafetyError(safetyErr)) {
+    if (String(process.env.NODE_ENV ?? '').trim() !== 'production') {
+      console.log(`[${routeLabel}] content safety refusal`);
+    }
     return sendContentSafetyResponse(res, logContext);
   }
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = safetyErr instanceof Error ? safetyErr.message : String(safetyErr);
   console.error(`[${routeLabel}]`, msg);
   if (/timeout|timed out|aborted|ETIMEDOUT/i.test(msg)) {
     return res.status(503).json({
@@ -88,7 +126,9 @@ export function sendRouteError(res, err, routeLabel, fallbackMessage, logContext
  */
 export function respondIfGraphSafetyPayload(res, raw, logContext) {
   if (!raw || typeof raw !== 'object' || typeof raw.error !== 'string') return false;
-  if (!isContentSafetyMessage(raw.error)) return false;
+  const errText = raw.error.trim();
+  if (!errText) return false;
+  // Graph JSON uses `{ error }` only for guardrail refusals (never mixed with nodes/edges).
   sendContentSafetyResponse(res, logContext);
   return true;
 }

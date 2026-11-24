@@ -13,7 +13,8 @@ import {
   mergeArticleIntoGrounding,
   isSafeHttpUrlForServerFetch,
 } from '../services/articleFetch.js';
-import { respondIfGraphSafetyPayload, sendRouteError } from '../lib/contentSafety.js';
+import { respondIfGraphSafetyPayload, sendContentSafetyResponse, sendRouteError } from '../lib/contentSafety.js';
+import { detectProhibitedUserInput } from '../lib/inputSafety.js';
 
 const router = Router();
 
@@ -83,6 +84,10 @@ router.post('/', async (req, res) => {
 
   const topicTrim = topic.trim();
   const safetyLog = { req, queryText: topicTrim, source: /** @type {const} */ ('search') };
+
+  if (detectProhibitedUserInput(topicTrim)) {
+    return sendContentSafetyResponse(res, safetyLog);
+  }
 
   try {
     const base =

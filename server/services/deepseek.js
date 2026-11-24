@@ -1,7 +1,12 @@
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { isExploreDebug } from '../lib/exploreDebugLog.js';
-import { ContentSafetyError, throwIfSafetyPayload } from '../lib/contentSafety.js';
+import {
+  ContentSafetyError,
+  isLikelyGeminiSafetyBlock,
+  normalizeToContentSafetyError,
+  throwIfSafetyPayload,
+} from '../lib/contentSafety.js';
 import { recordExplainRequest, recordExpandRequest } from '../lib/endpointMetrics.js';
 import { recordGeminiCall, recordDeepseekCall } from '../lib/llmMetrics.js';
 
@@ -316,15 +321,35 @@ function markGeminiGraphSucceeded() {
 function isGeminiGraphGuardrailRefusal(err) {
   if (!err) return false;
   if (err.name === 'GeminiGraphGuardrailRefusal') return true;
-  const msg = String(err.message || '').toLowerCase();
-  if (msg.includes('violates content safety guidelines')) return true;
-  if (msg.includes('content safety violation')) return true;
-  if (msg.includes('blocked') && (msg.includes('safety') || msg.includes('prompt'))) return true;
-  return false;
+  if (err instanceof ContentSafetyError) return true;
+  return isLikelyGeminiSafetyBlock(err);
 }
 
 function makeGeminiGraphGuardrailRefusal(message) {
-  return new ContentSafetyError(typeof message === 'string' ? message : 'Content safety refusal');
+  const err = new ContentSafetyError(typeof message === 'string' ? message : 'Content safety refusal');
+  err.name = 'GeminiGraphGuardrailRefusal';
+  return err;
+}
+
+/** @param {import('@google/generative-ai').GenerateContentResult} result */
+function readGeminiGraphJsonText(result) {
+  const response = result?.response;
+  const blockReason = response?.promptFeedback?.blockReason;
+  if (blockReason) {
+    throw makeGeminiGraphGuardrailRefusal(`Prompt blocked: ${blockReason}`);
+  }
+  const finishReason = response?.candidates?.[0]?.finishReason;
+  if (finishReason === 'SAFETY') {
+    throw makeGeminiGraphGuardrailRefusal('Response blocked by safety filters');
+  }
+  try {
+    return response.text();
+  } catch (textErr) {
+    if (isGeminiGraphGuardrailRefusal(textErr)) {
+      throw normalizeToContentSafetyError(textErr);
+    }
+    throw textErr;
+  }
 }
 
 function markGeminiGraphFailed(err) {
@@ -588,11 +613,16 @@ COMPARISON SUBGRAPH (one side of a multi-subject comparison):
   }
 
   try {
-    const result = await model.generateContent(userPrompt);
+    let result;
+    try {
+      result = await model.generateContent(userPrompt);
+    } catch (genErr) {
+      throw normalizeToContentSafetyError(genErr);
+    }
     recordGeminiCall(1);
     let text;
     try {
-      text = result.response.text();
+      text = readGeminiGraphJsonText(result);
     } catch (textErr) {
       if (isExploreDebug()) {
         console.error('[explore-debug] generateNodes: response.text() threw', {
@@ -641,7 +671,7 @@ COMPARISON SUBGRAPH (one side of a multi-subject comparison):
 
     // Guardrail JSON refusal — not a model outage; do not reset or advance flash failover streak.
     if (typeof parsed?.error === 'string') {
-      return parsed;
+      throw makeGeminiGraphGuardrailRefusal(parsed.error);
     }
 
     if (!Array.isArray(parsed?.nodes) || !Array.isArray(parsed?.edges)) {
@@ -652,8 +682,9 @@ COMPARISON SUBGRAPH (one side of a multi-subject comparison):
     markGeminiGraphSucceeded();
     return parsed;
   } catch (err) {
-    markGeminiGraphFailed(err);
-    throw err;
+    const normalized = normalizeToContentSafetyError(err);
+    markGeminiGraphFailed(normalized);
+    throw normalized;
   }
 }
 
