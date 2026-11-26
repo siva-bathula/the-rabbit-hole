@@ -1,5 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { graphPrimaryRootId } from '../lib/graphRoot.js';
+import { layoutRootChildrenOnRing, MAX_ROOT_LEVEL_CHILDREN } from '../lib/rootRingLayout.js';
+import { canAddMoreRootLevelTopics } from '../lib/baseLevelGraph.js';
 import {
   withTurnstilePayload,
   fetchWithTurnstile,
@@ -9,6 +11,8 @@ import {
 /** Wall clock for explore POST (after Turnstile session is ready). */
 const EXPLORE_FETCH_TIMEOUT_MS = 120_000;
 import { apiErrorFromPayload } from '../lib/apiErrors.js';
+
+export const ROOT_LEVEL_EXPANDING_ID = '__root_level__';
 
 function buildOutgoingAdj(links) {
   const m = new Map();
@@ -231,6 +235,77 @@ export function useGraph() {
       setIsExploring(false);
     }
   }, []);
+
+  const addRootLevel = useCallback(async () => {
+    if (expandingNodeId) return;
+
+    const nodes = nodesRef.current;
+    const links = linksRef.current;
+    if (
+      !canAddMoreRootLevelTopics({
+        graphData: { nodes, links },
+        comparisonSubjects,
+      })
+    ) {
+      return;
+    }
+
+    const primaryRoot = graphPrimaryRootId(nodes);
+    const rootTopic = rootLabelRef.current || nodes.find((n) => n.id === primaryRoot)?.label || '';
+    if (!rootTopic.trim()) return;
+
+    setExpandingNodeId(ROOT_LEVEL_EXPANDING_ID);
+    setError(null);
+    setErrorCode(null);
+    setErrorTitle(null);
+
+    try {
+      const existingLabels = nodes.map((n) => n.label).filter(Boolean);
+      const body = await withTurnstilePayload({
+        rootId: primaryRoot,
+        rootTopic,
+        existingLabels,
+        sessionTopic: sessionTopicRef.current || '',
+        groundingContext: groundingContextRef.current || '',
+      });
+      const res = await fetchWithTurnstile('/api/expand/root-level', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const parsed = await res.json();
+      if (!res.ok) throw apiErrorFromPayload(parsed, 'Server error');
+
+      const newNodes = (parsed.nodes || []).map((n) => ({
+        ...n,
+        depth: 1,
+      }));
+
+      const newLinks = (parsed.edges || []).map((e) => ({
+        source: e.source,
+        target: e.target,
+      }));
+
+      for (const n of newNodes) {
+        parentLabelOfRef.current.set(n.id, rootTopic);
+      }
+
+      const mergedNodes = [...nodesRef.current, ...newNodes];
+      const mergedLinks = [...linksRef.current, ...newLinks];
+      layoutRootChildrenOnRing(mergedNodes, mergedLinks);
+
+      nodesRef.current = mergedNodes;
+      linksRef.current = mergedLinks;
+      setGraphData({ nodes: mergedNodes, links: mergedLinks });
+      setSelectedNode(null);
+    } catch (err) {
+      setError(err.message);
+      setErrorCode(err.code || null);
+      setErrorTitle(err.title || null);
+    } finally {
+      setExpandingNodeId(null);
+    }
+  }, [expandedNodes, expandingNodeId, comparisonSubjects]);
 
   const cancelExplore = useCallback(() => {
     exploreUserCancelRef.current = true;
@@ -511,7 +586,9 @@ export function useGraph() {
     explore,
     cancelExplore,
     expand,
+    addRootLevel,
     collapse,
+    maxRootLevelChildren: MAX_ROOT_LEVEL_CHILDREN,
     reset,
     snapshot,
     restore,

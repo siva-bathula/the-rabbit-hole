@@ -9,7 +9,28 @@ function modeCacheKey(nodeId, mode) {
   return mode === 'normal' ? nodeId : `${nodeId}::${mode}`;
 }
 
-export default function NodeOverlay({ node, rootTopic, sessionTopic = '', groundingContext = '', onClose, onExpand, onCollapse, onExplore, isExpanding, isExpanded, explanationCache, onForkHole, onExplanationCached, onAskFollowUp, onQuizMe, explainMode = 'normal', onExplainModeChange }) {
+export default function NodeOverlay({
+  node,
+  rootTopic,
+  sessionTopic = '',
+  groundingContext = '',
+  onClose,
+  onExpand,
+  onCollapse,
+  onExplore,
+  isExpanding,
+  isExpanded,
+  showAddRootLevel = false,
+  onAddRootLevel,
+  isAddingRootLevel = false,
+  explanationCache,
+  onForkHole,
+  onExplanationCached,
+  onAskFollowUp,
+  onQuizMe,
+  explainMode = 'normal',
+  onExplainModeChange,
+}) {
   const [explanation, setExplanation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -638,6 +659,28 @@ export default function NodeOverlay({ node, rootTopic, sessionTopic = '', ground
 
             {/* Footer actions */}
             <div className="px-6 pt-4 pb-4 border-t border-white/10 flex flex-col gap-2.5 flex-shrink-0">
+              {showAddRootLevel && isPrimaryGraphRoot(node.id) && onAddRootLevel && (
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={onAddRootLevel}
+                    disabled={isAddingRootLevel || isExpanding}
+                    className="flex items-center justify-center p-2 rounded-xl transition-all
+                      bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-100 border border-cyan-400/25 active:scale-[0.98]
+                      disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Add more topics on the map"
+                    aria-label="Add more topics to map"
+                  >
+                    {isAddingRootLevel ? (
+                      <div className="w-4 h-4 rounded-full border-2 border-cyan-200/30 border-t-cyan-100 animate-spin" />
+                    ) : (
+                      <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              )}
               {/* Ask follow-up — always visible for non-root nodes */}
               {onAskFollowUp && !isPrimaryGraphRoot(node.id) && (
                 <button

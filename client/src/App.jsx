@@ -6,7 +6,9 @@ import SlowBurnView from './components/SlowBurnView.jsx';
 import PathReplayOverlay from './components/PathReplayOverlay.jsx';
 import SessionsDrawer from './components/SessionsDrawer.jsx';
 import FollowUpChatPanel from './components/FollowUpChatPanel.jsx';
-import { useGraph } from './hooks/useGraph.js';
+import { useGraph, ROOT_LEVEL_EXPANDING_ID } from './hooks/useGraph.js';
+import { canAddMoreRootLevelTopics } from './lib/baseLevelGraph.js';
+import { countRootLevelChildren } from './lib/rootRingLayout.js';
 import { useExplorationPath } from './hooks/useExplorationPath.js';
 import { usePullLevel } from './hooks/usePullLevel.js';
 import QuizOverlay from './components/QuizOverlay.jsx';
@@ -216,6 +218,7 @@ export default function App() {
   const [slowBurnAnchor, setSlowBurnAnchor] = useState(null);
 
   const [comparePanelOpen, setComparePanelOpen] = useState(false);
+  const [mobileGraphToolbarOpen, setMobileGraphToolbarOpen] = useState(false);
 
   const saveToHistory = useCallback((topic) => {
     const normalised = topic.trim();
@@ -257,6 +260,8 @@ export default function App() {
     explore,
     cancelExplore,
     expand,
+    addRootLevel,
+    maxRootLevelChildren,
     collapse,
     reset,
     snapshot,
@@ -270,6 +275,22 @@ export default function App() {
   useEffect(() => {
     if (!comparisonSubjects?.length) setComparePanelOpen(false);
   }, [comparisonSubjects]);
+
+  const isAddingRootLevel = expandingNodeId === ROOT_LEVEL_EXPANDING_ID;
+
+  const showAddRootLevelButton = useMemo(
+    () =>
+      canAddMoreRootLevelTopics({
+        graphData,
+        comparisonSubjects,
+      }),
+    [graphData, comparisonSubjects],
+  );
+
+  const rootLevelChildCount = useMemo(
+    () => countRootLevelChildren(graphData.nodes, graphData.links),
+    [graphData.nodes, graphData.links],
+  );
 
   const { pathIds, appendStep, resetPath, replacePath, canReplay } = useExplorationPath();
 
@@ -897,6 +918,23 @@ export default function App() {
 
   const { visible: feedbackBannerVisible, dismiss: dismissFeedbackBanner } = useFeedbackBanner();
 
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 640px)');
+    const onChange = () => {
+      if (mq.matches) setMobileGraphToolbarOpen(false);
+    };
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  const mobileGraphTopInset = useMemo(() => {
+    const tray = mobileGraphToolbarOpen ? '10.5rem' : '5.5rem';
+    if (feedbackBannerVisible) {
+      return `calc(2.75rem + ${tray} + env(safe-area-inset-top, 0px))`;
+    }
+    return `calc(${tray} + env(safe-area-inset-top, 0px))`;
+  }, [mobileGraphToolbarOpen, feedbackBannerVisible]);
+
   const handleNewSearch = () => {
     // Save live graph before going home
     if (graphData.nodes.length > 0) {
@@ -928,7 +966,194 @@ export default function App() {
     setShareId(null);
     setSlowBurnAnchor(null);
     setExplainMode('normal');
+    setMobileGraphToolbarOpen(false);
   };
+
+  const graphToolbarButtons = (
+    <>
+      <ContactDeveloperButton compact />
+
+      {showAddRootLevelButton && (
+        <button
+          type="button"
+          onClick={() => addRootLevel()}
+          disabled={isExploring || isAddingRootLevel || !!expandingNodeId}
+          title={`Add more topics on the map (${rootLevelChildCount}/${maxRootLevelChildren})`}
+          className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
+            border-cyan-400/40 text-cyan-100 hover:bg-cyan-500/15
+            disabled:opacity-40 disabled:cursor-not-allowed max-sm:justify-self-center"
+          style={{ background: 'rgba(34,211,238,0.12)' }}
+          aria-label="Add more topics to map"
+        >
+          {isAddingRootLevel ? (
+            <div className="w-4 h-4 rounded-full border-2 border-cyan-200/30 border-t-cyan-50 animate-spin" />
+          ) : (
+            <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+          )}
+        </button>
+      )}
+
+      <button
+        onClick={handleShare}
+        disabled={isSharing || graphData.nodes.length === 0}
+        className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
+          border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10
+          disabled:opacity-40 disabled:cursor-not-allowed"
+        style={{ background: 'rgba(34,211,238,0.07)' }}
+        title={shareCopied ? 'Link copied' : 'Copy shareable link'}
+        aria-label={shareCopied ? 'Link copied' : 'Share'}
+      >
+        {isSharing ? (
+          <div className="w-4 h-4 rounded-full border-2 border-cyan-400/30 border-t-cyan-400 animate-spin" />
+        ) : shareCopied ? (
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+        ) : (
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+          </svg>
+        )}
+      </button>
+
+      <button
+        type="button"
+        onClick={handlePullLevelClick}
+        disabled={pullLevelDisabled}
+        title={pullLevelTitle}
+        className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
+          border-emerald-500/35 text-emerald-200/95 hover:bg-emerald-500/10
+          disabled:opacity-40 disabled:cursor-not-allowed"
+        style={{ background: 'rgba(16, 185, 129, 0.08)' }}
+        aria-label={pullLevelTitle}
+      >
+        {isPullingLevel ? (
+          <div className="w-4 h-4 rounded-full border-2 border-emerald-400/30 border-t-emerald-400 animate-spin" />
+        ) : (
+          <svg
+            className="w-4 h-4 flex-shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            aria-hidden
+          >
+            <path strokeLinecap="round" strokeWidth={2} d="M4 7.5h16" />
+            <path strokeLinecap="round" strokeWidth={2} d="M7 7.5V10M12 7.5V10M17 7.5V10" />
+            <circle cx="7" cy="15.5" r="2.5" strokeWidth={2} />
+            <circle cx="12" cy="15.5" r="2.5" strokeWidth={2} />
+            <circle cx="17" cy="15.5" r="2.5" strokeWidth={2} />
+          </svg>
+        )}
+      </button>
+
+      <button
+        type="button"
+        onClick={handleExportHtml}
+        disabled={graphData.nodes.length === 0 || isExploring}
+        title="Download explored content as HTML"
+        className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
+          border-yellow-400/30 text-yellow-300 hover:bg-yellow-500/10
+          disabled:opacity-40 disabled:cursor-not-allowed"
+        style={{ background: 'rgba(250, 204, 21, 0.07)' }}
+        aria-label="Export HTML"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+            d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      </button>
+
+      {comparisonSubjects?.length >= 2 && (
+        <button
+          type="button"
+          onClick={() => setComparePanelOpen(true)}
+          disabled={isExploring || graphData.nodes.length === 0}
+          title="Side-by-side comparison across aligned topics"
+          className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
+            border-violet-500/35 text-violet-200/95 hover:bg-violet-500/10
+            disabled:opacity-35 disabled:cursor-not-allowed"
+          style={{ background: 'rgba(139,92,246,0.08)' }}
+          aria-label="Compare topics"
+        >
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+          </svg>
+        </button>
+      )}
+
+      <button
+        type="button"
+        onClick={openPathReplay}
+        disabled={!canReplay || isExploring || graphData.nodes.length === 0}
+        title={canReplay ? 'Animate the nodes you visited in order' : 'Visit at least two nodes to replay'}
+        className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
+          border-amber-500/35 text-amber-200/90 hover:bg-amber-500/10
+          disabled:opacity-35 disabled:cursor-not-allowed"
+        style={{ background: 'rgba(251,191,36,0.08)' }}
+        aria-label="Replay my path"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+            d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+            d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </button>
+
+      {sessions.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setSessionsOpen(true)}
+          title="Saved sessions"
+          className="flex items-center gap-1 p-1.5 pr-2 rounded-xl border flex-shrink-0
+            border-purple-500/30 text-purple-300 hover:bg-purple-500/10"
+          style={{ background: 'rgba(168,85,247,0.08)' }}
+          aria-label={`Saved sessions (${sessions.length})`}
+        >
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+          </svg>
+          <span
+            className="flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full text-xs font-bold text-white"
+            style={{ background: 'rgba(168,85,247,0.6)' }}
+          >
+            {sessions.length}
+          </span>
+        </button>
+      )}
+
+      <button
+        type="button"
+        onClick={handleModeToggle}
+        disabled={isExploring}
+        title={mode === 'slow' ? 'Switch to graph view' : 'Switch to slow burn'}
+        aria-label={mode === 'slow' ? 'Slow burn mode' : 'Graph view mode'}
+        className={`flex items-center justify-center p-2 rounded-xl border flex-shrink-0
+          disabled:opacity-40 disabled:cursor-not-allowed
+          ${mode === 'slow'
+            ? 'bg-purple-600/20 border-purple-500/35 text-purple-300 hover:bg-purple-600/30'
+            : 'bg-white/8 border-white/15 text-white/80 hover:bg-white/12 hover:text-white'
+          }`}
+      >
+        {mode === 'slow' ? (
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+          </svg>
+        ) : (
+          <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
+        )}
+      </button>
+    </>
+  );
 
   return (
     <div
@@ -1035,6 +1260,29 @@ export default function App() {
                 >
                   Fit
                 </button>
+                {showAddRootLevelButton && (
+                  <button
+                    type="button"
+                    onClick={() => addRootLevel()}
+                    disabled={isExploring || isAddingRootLevel || expandingNodeId}
+                    className="flex h-10 w-10 items-center justify-center rounded-xl text-cyan-100/90 transition-colors hover:bg-white/12 hover:text-white
+                      disabled:opacity-35 disabled:cursor-not-allowed"
+                    style={{
+                      background: 'rgba(34,211,238,0.1)',
+                      border: '1px solid rgba(34,211,238,0.22)',
+                    }}
+                    aria-label="Add more topics to map"
+                    title={`Add more topics on the map (${rootLevelChildCount}/${maxRootLevelChildren})`}
+                  >
+                    {isAddingRootLevel ? (
+                      <div className="h-4 w-4 rounded-full border-2 border-cyan-200/30 border-t-cyan-100 animate-spin" />
+                    ) : (
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                    )}
+                  </button>
+                )}
               </div>
 
               {selectedNode && (
@@ -1049,6 +1297,9 @@ export default function App() {
                   onExplore={handleRelatedExplore}
                   isExpanding={expandingNodeId === selectedNode.id}
                   isExpanded={expandedNodes.has(selectedNode.id)}
+                  showAddRootLevel={showAddRootLevelButton}
+                  onAddRootLevel={addRootLevel}
+                  isAddingRootLevel={isAddingRootLevel}
                   explanationCache={explanationCache}
                   onForkHole={handleForkHole}
                   explainMode={explainMode}
@@ -1085,10 +1336,10 @@ export default function App() {
           {/* Slow burn mode: sidebar tree + content panel */}
           {mode === 'slow' && (
             <div
-              className={`absolute inset-0 ${
-                feedbackBannerVisible ? 'pt-[134px] sm:pt-[100px]' : 'pt-[90px] sm:pt-[56px]'
+              className={`absolute inset-0 max-sm:pt-[var(--mobile-graph-pt)] ${
+                feedbackBannerVisible ? 'sm:pt-[100px]' : 'sm:pt-[56px]'
               }`}
-              style={{ background: '#07070f' }}
+              style={{ background: '#07070f', '--mobile-graph-pt': mobileGraphTopInset }}
             >
               <SlowBurnView
                 graphData={graphData}
@@ -1117,15 +1368,17 @@ export default function App() {
 
           {/* Top bar — floats over both modes */}
           <div
-            className={`absolute left-0 right-0 z-30 pointer-events-none overflow-hidden
-              flex flex-row items-center justify-between gap-2
-              px-4 sm:px-5 pt-2.5 pb-2 ${
+            className={`absolute left-0 right-0 z-30 pointer-events-none overflow-x-clip overflow-y-visible ${
                 feedbackBannerVisible ? 'top-11' : 'top-0'
               }`}
             style={{ background: mode === 'slow' ? 'rgba(7,7,15,0.92)' : 'rgba(7,7,15,0.75)' }}
           >
-            {/* Row 1 (both mobile & desktop): New Search + current topic */}
-            <div className="flex items-center gap-2 pointer-events-auto min-w-0 flex-1">
+            <div
+              className="relative flex flex-col sm:flex-row sm:items-center sm:justify-between sm:gap-2
+                px-4 sm:px-5 pt-2.5 max-sm:pb-1 sm:pb-2.5"
+            >
+            {/* Row 1: New Search + current topic */}
+            <div className="flex w-full items-center gap-2 pointer-events-auto min-w-0 sm:flex-1">
               <button
                 type="button"
                 onClick={handleNewSearch}
@@ -1140,188 +1393,65 @@ export default function App() {
                 </svg>
               </button>
               <div
-                className="min-w-0 flex-1 px-3 py-1.5 rounded-xl text-xs font-semibold text-white/70 truncate"
+                className="min-w-0 flex-1 max-sm:max-w-none sm:max-w-[10rem] px-3 py-2 rounded-xl text-xs font-semibold text-white/70 truncate leading-normal"
                 style={{
                   background: 'rgba(255,255,255,0.05)',
                   border: '1px solid rgba(255,255,255,0.1)',
-                  maxWidth: 'min(160px, 100%)',
                 }}
               >
                 {currentTopic}
               </div>
             </div>
 
-            {/* Row 2 (mobile) / right side (desktop): actions — icon-only below sm */}
+            {/* Mobile: slide-down toolbar tray */}
             <div
-              className="flex items-center flex-nowrap justify-end gap-1.5 pointer-events-auto min-w-0 shrink sm:max-w-none max-w-[min(52vw,17.5rem)] overflow-x-auto overflow-y-hidden [-webkit-overflow-scrolling:touch] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className={`sm:hidden w-full overflow-hidden transition-all duration-300 ease-out pointer-events-auto
+                ${mobileGraphToolbarOpen ? 'max-h-[8.5rem] opacity-100' : 'max-h-0 opacity-0'}`}
             >
-              <ContactDeveloperButton compact />
-
-              {/* Share button */}
-              <button
-                onClick={handleShare}
-                disabled={isSharing || graphData.nodes.length === 0}
-                className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
-                  border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/10
-                  disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ background: 'rgba(34,211,238,0.07)' }}
-                title={shareCopied ? 'Link copied' : 'Copy shareable link'}
-                aria-label={shareCopied ? 'Link copied' : 'Share'}
+              <div
+                className="grid grid-cols-5 gap-x-2 gap-y-2.5 justify-items-center pt-2 pb-1"
+                style={{
+                  borderTop: mobileGraphToolbarOpen ? '1px solid rgba(255,255,255,0.08)' : 'none',
+                }}
               >
-                {isSharing ? (
-                  <div className="w-4 h-4 rounded-full border-2 border-cyan-400/30 border-t-cyan-400 animate-spin" />
-                ) : shareCopied ? (
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                ) : (
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                  </svg>
-                )}
-              </button>
+                {graphToolbarButtons}
+              </div>
+            </div>
 
-              <button
-                type="button"
-                onClick={handlePullLevelClick}
-                disabled={pullLevelDisabled}
-                title={pullLevelTitle}
-                className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
-                  border-emerald-500/35 text-emerald-200/95 hover:bg-emerald-500/10
-                  disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ background: 'rgba(16, 185, 129, 0.08)' }}
-                aria-label={pullLevelTitle}
+            {/* Desktop: toolbar always visible */}
+            <div className="hidden sm:flex pointer-events-auto items-center flex-nowrap justify-end gap-1.5 shrink-0">
+              {graphToolbarButtons}
+            </div>
+
+            {/* Mobile: pull tab (like Slow Burn sidebar toggle) */}
+            <button
+              type="button"
+              onClick={() => setMobileGraphToolbarOpen((v) => !v)}
+              className="sm:hidden pointer-events-auto absolute left-1/2 z-40 flex h-9 w-20 -translate-x-1/2 items-center justify-center
+                rounded-b-2xl text-white transition-all active:scale-95"
+              style={{
+                top: '100%',
+                background: 'linear-gradient(180deg, #7c3aed 0%, #a855f7 100%)',
+                border: '1px solid rgba(196,148,255,0.5)',
+                borderTop: 'none',
+                boxShadow: '0 8px 20px rgba(168,85,247,0.45), inset 0 1px 0 rgba(255,255,255,0.15)',
+              }}
+              title={mobileGraphToolbarOpen ? 'Hide tools' : 'Show tools'}
+              aria-label={mobileGraphToolbarOpen ? 'Hide tools' : 'Show tools'}
+              aria-expanded={mobileGraphToolbarOpen}
+            >
+              <svg
+                className="w-5 h-5 transition-transform duration-300"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={3}
+                style={{ transform: mobileGraphToolbarOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                aria-hidden
               >
-                {isPullingLevel ? (
-                  <div className="w-4 h-4 rounded-full border-2 border-emerald-400/30 border-t-emerald-400 animate-spin" />
-                ) : (
-                  <svg
-                    className="w-4 h-4 flex-shrink-0"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    aria-hidden
-                  >
-                    {/* Parent bar + sibling nodes at one level */}
-                    <path strokeLinecap="round" strokeWidth={2} d="M4 7.5h16" />
-                    <path strokeLinecap="round" strokeWidth={2} d="M7 7.5V10M12 7.5V10M17 7.5V10" />
-                    <circle cx="7" cy="15.5" r="2.5" strokeWidth={2} />
-                    <circle cx="12" cy="15.5" r="2.5" strokeWidth={2} />
-                    <circle cx="17" cy="15.5" r="2.5" strokeWidth={2} />
-                  </svg>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={handleExportHtml}
-                disabled={graphData.nodes.length === 0 || isExploring}
-                title="Download explored content as HTML"
-                className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
-                  border-yellow-400/30 text-yellow-300 hover:bg-yellow-500/10
-                  disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{ background: 'rgba(250, 204, 21, 0.07)' }}
-                aria-label="Export HTML"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </button>
-
-              {comparisonSubjects?.length >= 2 && (
-                <button
-                  type="button"
-                  onClick={() => setComparePanelOpen(true)}
-                  disabled={isExploring || graphData.nodes.length === 0}
-                  title="Side-by-side comparison across aligned topics"
-                  className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
-                    border-violet-500/35 text-violet-200/95 hover:bg-violet-500/10
-                    disabled:opacity-35 disabled:cursor-not-allowed"
-                  style={{ background: 'rgba(139,92,246,0.08)' }}
-                  aria-label="Compare topics"
-                >
-                  <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
-                  </svg>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={openPathReplay}
-                disabled={!canReplay || isExploring || graphData.nodes.length === 0}
-                title={canReplay ? 'Animate the nodes you visited in order' : 'Visit at least two nodes to replay'}
-                className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
-                  border-amber-500/35 text-amber-200/90 hover:bg-amber-500/10
-                  disabled:opacity-35 disabled:cursor-not-allowed"
-                style={{ background: 'rgba(251,191,36,0.08)' }}
-                aria-label="Replay my path"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                    d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </button>
-
-              {/* Sessions pill */}
-              {sessions.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setSessionsOpen(true)}
-                  title="Saved sessions"
-                  className="flex items-center gap-1 p-1.5 pr-2 rounded-xl border flex-shrink-0
-                    border-purple-500/30 text-purple-300 hover:bg-purple-500/10"
-                  style={{ background: 'rgba(168,85,247,0.08)' }}
-                  aria-label={`Saved sessions (${sessions.length})`}
-                >
-                  <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                  <span
-                    className="flex items-center justify-center min-w-[1.25rem] h-5 px-1 rounded-full text-xs font-bold text-white"
-                    style={{ background: 'rgba(168,85,247,0.6)' }}
-                  >
-                    {sessions.length}
-                  </span>
-                </button>
-              )}
-
-              {/* Mode toggle — always shows current mode, both states visually prominent */}
-              <button
-                type="button"
-                onClick={handleModeToggle}
-                disabled={isExploring}
-                title={mode === 'slow' ? 'Switch to graph view' : 'Switch to slow burn'}
-                aria-label={mode === 'slow' ? 'Slow burn mode' : 'Graph view mode'}
-                className={`flex items-center justify-center p-2 rounded-xl border flex-shrink-0
-                  disabled:opacity-40 disabled:cursor-not-allowed
-                  ${mode === 'slow'
-                    ? 'bg-purple-600/20 border-purple-500/35 text-purple-300 hover:bg-purple-600/30'
-                    : 'bg-white/8 border-white/15 text-white/80 hover:bg-white/12 hover:text-white'
-                  }`}
-              >
-                {mode === 'slow' ? (
-                  <>
-                    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                        d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                    </svg>
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                        d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                  </>
-                )}
-              </button>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
             </div>
           </div>
 

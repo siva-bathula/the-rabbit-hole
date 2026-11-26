@@ -181,13 +181,13 @@ function ContentArea({ node, parentContext, rootLabel, sessionTopic, groundingCo
   if (!node) return null;
 
   return (
-    <div className="max-w-2xl mx-auto px-8 py-8">
+    <div className="max-w-2xl mx-auto px-5 sm:px-8 pt-4 pb-8 sm:py-8">
       {/* Header */}
       <div className="mb-8">
-        <span className="text-xs font-semibold uppercase tracking-widest text-purple-400 mb-2 block">
+        <span className="text-xs font-semibold uppercase tracking-widest text-purple-400 mb-2 block leading-normal">
           {parentContext && parentContext !== node.label ? `${parentContext} →` : 'Exploring'}
         </span>
-        <h1 className="text-3xl font-bold text-white leading-tight mb-4">{node.label}</h1>
+        <h1 className="text-3xl font-bold text-white leading-snug mb-4">{node.label}</h1>
 
         <ExplainDepthControls
           explainMode={explainMode}
@@ -625,7 +625,7 @@ export default function SlowBurnView({
           </svg>
         </button>
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto scroll-pt-4">
           {currentNode?.followUp ? (
             <FollowUpSlowBurnContent node={currentNode} onContinueThread={onAskFollowUp} />
           ) : currentNode ? (

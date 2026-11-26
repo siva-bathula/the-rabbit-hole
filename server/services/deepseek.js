@@ -770,6 +770,91 @@ Rules:
   }
 }
 
+/**
+ * More first-level siblings around the main topic (root) — same depth as initial explore children.
+ */
+export async function addRootLevelNodes(
+  rootId,
+  rootTopic,
+  existingLabels,
+  sessionTopic = '',
+  groundingContext = '',
+) {
+  recordExpandRequest();
+  const t0 = Date.now();
+  const { systemExtra, userPrefix } = newsAnchoredAugmentation(sessionTopic, 'expand');
+
+  const systemInstruction =
+    SAFETY_GUARDRAIL_BRIEF +
+    `You are expanding a knowledge map at the TOP level only (sibling branches from the main topic).
+${systemExtra}
+
+The learner already has a map for: "${rootTopic}".
+Generate exactly 5 NEW first-level subtopics — concise map branches at the same depth as the initial overview (not deeper dives into one branch).
+
+Return ONLY a JSON object with exactly these fields:
+- "nodes": array of objects, each with { "id": string, "label": string, "group": string }
+- "edges": array of objects, each with { "source": string, "target": string }
+
+Rules:
+1. Use id "root" in edges as the source for every new child (the main topic node).
+2. New node ids: "child_1", "child_2", … "child_5"
+3. Each edge: { "source": "root", "target": "<child id>" }
+4. Groups: "core", "application", "history", "theory", "impact", "related", "example", "mechanism"
+5. DO NOT repeat any label already on the map (case-insensitive).
+6. Each label 1–4 words; add distinct angles on "${rootTopic}" the map does not yet cover.
+7. Labels must be appropriate for general learning maps (no shock or off-topic filler).`;
+
+  const model = geminiClient.getGenerativeModel({
+    model: currentGeminiGraphModel(),
+    systemInstruction,
+    generationConfig: {
+      responseMimeType: 'application/json',
+      temperature: isNewsAnchoredTopic(sessionTopic) ? 0.45 : 0.35,
+    },
+  });
+
+  const skipList = (existingLabels || []).filter(Boolean).join(', ');
+
+  try {
+    let result;
+    try {
+      result = await model.generateContent(
+        `${userPrefix}Main topic: "${rootTopic}"\nAlready on the map (do not repeat): ${skipList || '(none)'}${sourceGroundingSuffix(groundingContext)}`,
+      );
+    } catch (genErr) {
+      throw normalizeToContentSafetyError(genErr);
+    }
+    recordGeminiCall(1);
+
+    const text = readGeminiGraphJsonText(result);
+    const data = JSON.parse(text);
+    if (typeof data?.error === 'string') {
+      throw makeGeminiGraphGuardrailRefusal(data.error);
+    }
+    if (!data.nodes || !data.edges) {
+      throw new Error('Invalid response from AI');
+    }
+
+    const prefix = `rl_${Date.now().toString(36)}`;
+    const remappedNodes = data.nodes.map((n) => ({
+      ...n,
+      id: `${prefix}_${n.id}`,
+    }));
+    const remappedEdges = data.edges.map((e) => ({
+      source: e.source === 'root' ? rootId : `${prefix}_${e.source}`,
+      target: e.target === 'root' ? rootId : `${prefix}_${e.target}`,
+    }));
+
+    console.log(`[addRootLevelNodes] "${rootTopic}" — ${Date.now() - t0}ms`);
+    markGeminiGraphSucceeded();
+    return { nodes: remappedNodes, edges: remappedEdges };
+  } catch (err) {
+    markGeminiGraphFailed(err);
+    throw err;
+  }
+}
+
 const CODE_KEYWORDS = [
   'code', 'implement', 'example', 'snippet', 'syntax', 'usage',
   'sample', 'demo', 'program', 'script', 'function', 'method',
