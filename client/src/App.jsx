@@ -16,6 +16,8 @@ import CompareMatrixOverlay from './components/CompareMatrixOverlay.jsx';
 import ContactDeveloperButton from './components/ContactDeveloperButton.jsx';
 import FeedbackBanner from './components/FeedbackBanner.jsx';
 import RequestNotice from './components/RequestNotice.jsx';
+import ActionStatusOverlay from './components/ActionStatusOverlay.jsx';
+import { useActionStatus } from './hooks/useActionStatus.js';
 import { useFeedbackBanner } from './hooks/useFeedbackBanner.js';
 import { errorKindFromError } from './lib/apiErrors.js';
 import {
@@ -219,6 +221,10 @@ export default function App() {
 
   const [comparePanelOpen, setComparePanelOpen] = useState(false);
   const [mobileGraphToolbarOpen, setMobileGraphToolbarOpen] = useState(false);
+  const { message: actionStatusMessage, fading: actionStatusFading, show: showActionStatus } =
+    useActionStatus();
+  const wasAddingRootLevelRef = useRef(false);
+  const wasPullingLevelRef = useRef(false);
 
   const saveToHistory = useCallback((topic) => {
     const normalised = topic.trim();
@@ -320,9 +326,10 @@ export default function App() {
 
   const openPathReplay = useCallback(() => {
     if (pathIds.length < 2) return;
+    showActionStatus('Opening path replay…');
     setReplayStepIndex(0);
     setPathReplayOpen(true);
-  }, [pathIds.length]);
+  }, [pathIds.length, showActionStatus]);
 
   useEffect(() => {
     if (phase !== 'graph' || mode !== 'fast') return;
@@ -395,6 +402,38 @@ export default function App() {
     explanationCache,
     onCached: persistLive,
   });
+
+  useEffect(() => {
+    if (isPullingLevel) {
+      wasPullingLevelRef.current = true;
+      const { done, total, label } = pullProgress;
+      const step = total > 0 ? Math.min(done + 1, total) : 0;
+      const msg = label
+        ? `Fetching “${label}” (${step}/${total})…`
+        : `Fetching sibling explanations (${done}/${total})…`;
+      showActionStatus(msg, { persist: true });
+      return;
+    }
+    if (wasPullingLevelRef.current) {
+      wasPullingLevelRef.current = false;
+      showActionStatus(
+        pullLevelError ? 'Level fetch failed — try again' : 'Finished fetching this level',
+      );
+    }
+  }, [isPullingLevel, pullProgress, pullLevelError, showActionStatus]);
+
+  useEffect(() => {
+    if (isAddingRootLevel) {
+      wasAddingRootLevelRef.current = true;
+      return;
+    }
+    if (wasAddingRootLevelRef.current) {
+      wasAddingRootLevelRef.current = false;
+      showActionStatus(
+        error ? errorTitle || error || 'Could not add topics' : 'New topics added to the map',
+      );
+    }
+  }, [isAddingRootLevel, error, errorTitle, showActionStatus]);
 
   useEffect(() => {
     if (phase === 'graph' && !isExploring) persistLive();
@@ -648,6 +687,7 @@ export default function App() {
   const handleShare = useCallback(async () => {
     if (isSharing) return;
     setIsSharing(true);
+    showActionStatus('Creating share link…', { persist: true });
     try {
       const snap = snapshot();
       const body = {
@@ -666,35 +706,41 @@ export default function App() {
       await navigator.clipboard.writeText(url);
       setShareCopied(true);
       setTimeout(() => setShareCopied(false), 2500);
+      showActionStatus('Share link copied to clipboard');
     } catch (err) {
       console.error('[share]', err);
+      showActionStatus('Could not create share link');
     } finally {
       setIsSharing(false);
     }
-  }, [snapshot, currentTopic, shareId, isSharing]);
+  }, [snapshot, currentTopic, shareId, isSharing, showActionStatus]);
 
   const handleExportHtml = useCallback(() => {
     const snap = snapshot();
     if (countExploredExportNodes(snap) === 0) {
-      window.alert('Nothing to export yet — open and read at least one node first.');
+      showActionStatus('Nothing to export yet — read at least one node first');
       return;
     }
+    showActionStatus('Preparing HTML download…');
     const html = buildExplorationHtml({
       topic: currentTopic,
       rootLabel,
       snap,
     });
     downloadExplorationHtml(html, currentTopic || rootLabel);
-  }, [snapshot, currentTopic, rootLabel]);
+    showActionStatus('Download started');
+  }, [snapshot, currentTopic, rootLabel, showActionStatus]);
 
   const handlePullLevelClick = useCallback(() => {
     if (isPullingLevel) {
       cancelPull();
+      showActionStatus('Cancelled level fetch');
       return;
     }
     clearPullLevelError();
+    showActionStatus('Fetching explanations for this level…', { persist: true });
     pullLevel();
-  }, [isPullingLevel, cancelPull, clearPullLevelError, pullLevel]);
+  }, [isPullingLevel, cancelPull, clearPullLevelError, pullLevel, showActionStatus]);
 
   const pullLevelTitle = useMemo(() => {
     if (isPullingLevel) {
@@ -893,8 +939,38 @@ export default function App() {
   );
 
   const handleModeToggle = useCallback(() => {
-    setMode((m) => (m === 'fast' ? 'slow' : 'fast'));
-  }, []);
+    setMode((m) => {
+      const next = m === 'fast' ? 'slow' : 'fast';
+      showActionStatus(next === 'slow' ? 'Switching to Slow Burn…' : 'Switching to Graph view…');
+      return next;
+    });
+  }, [showActionStatus]);
+
+  const handleOpenCompare = useCallback(() => {
+    showActionStatus('Opening topic comparison…');
+    setComparePanelOpen(true);
+  }, [showActionStatus]);
+
+  const handleOpenSessions = useCallback(() => {
+    showActionStatus('Opening saved sessions…');
+    setSessionsOpen(true);
+  }, [showActionStatus]);
+
+  const handleAddRootLevel = useCallback(() => {
+    if (expandingNodeId || isAddingRootLevel) return;
+    if (!showAddRootLevelButton) {
+      showActionStatus('Use Go Deeper on nodes before adding more top-level topics');
+      return;
+    }
+    showActionStatus('Adding topics to the map…', { persist: true });
+    addRootLevel();
+  }, [
+    addRootLevel,
+    showActionStatus,
+    expandingNodeId,
+    isAddingRootLevel,
+    showAddRootLevelButton,
+  ]);
 
   const handleGraphZoomIn = useCallback(() => {
     graphViewRef.current?.zoomByFactor?.(GRAPH_VIEW_ZOOM_IN, 160);
@@ -971,12 +1047,15 @@ export default function App() {
 
   const graphToolbarButtons = (
     <>
-      <ContactDeveloperButton compact />
+      <ContactDeveloperButton
+        compact
+        onActivate={() => showActionStatus('Opening email to contact developer…')}
+      />
 
       {showAddRootLevelButton && (
         <button
           type="button"
-          onClick={() => addRootLevel()}
+          onClick={handleAddRootLevel}
           disabled={isExploring || isAddingRootLevel || !!expandingNodeId}
           title={`Add more topics on the map (${rootLevelChildCount}/${maxRootLevelChildren})`}
           className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
@@ -1069,7 +1148,7 @@ export default function App() {
       {comparisonSubjects?.length >= 2 && (
         <button
           type="button"
-          onClick={() => setComparePanelOpen(true)}
+          onClick={handleOpenCompare}
           disabled={isExploring || graphData.nodes.length === 0}
           title="Side-by-side comparison across aligned topics"
           className="flex items-center justify-center p-2 rounded-xl border flex-shrink-0
@@ -1107,7 +1186,7 @@ export default function App() {
       {sessions.length > 0 && (
         <button
           type="button"
-          onClick={() => setSessionsOpen(true)}
+          onClick={handleOpenSessions}
           title="Saved sessions"
           className="flex items-center gap-1 p-1.5 pr-2 rounded-xl border flex-shrink-0
             border-purple-500/30 text-purple-300 hover:bg-purple-500/10"
@@ -1193,6 +1272,11 @@ export default function App() {
 
       {phase === 'graph' && (
         <>
+          <ActionStatusOverlay
+            message={actionStatusMessage}
+            fading={actionStatusFading}
+            bannerOffset={feedbackBannerVisible}
+          />
           {/* Graph View: full-screen interactive graph */}
           {mode === 'fast' && (
             <>
@@ -1263,7 +1347,7 @@ export default function App() {
                 {showAddRootLevelButton && (
                   <button
                     type="button"
-                    onClick={() => addRootLevel()}
+                    onClick={handleAddRootLevel}
                     disabled={isExploring || isAddingRootLevel || expandingNodeId}
                     className="flex h-10 w-10 items-center justify-center rounded-xl text-cyan-100/90 transition-colors hover:bg-white/12 hover:text-white
                       disabled:opacity-35 disabled:cursor-not-allowed"
@@ -1298,7 +1382,7 @@ export default function App() {
                   isExpanding={expandingNodeId === selectedNode.id}
                   isExpanded={expandedNodes.has(selectedNode.id)}
                   showAddRootLevel={showAddRootLevelButton}
-                  onAddRootLevel={addRootLevel}
+                  onAddRootLevel={handleAddRootLevel}
                   isAddingRootLevel={isAddingRootLevel}
                   explanationCache={explanationCache}
                   onForkHole={handleForkHole}

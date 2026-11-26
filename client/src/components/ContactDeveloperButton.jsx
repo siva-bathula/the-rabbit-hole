@@ -4,10 +4,11 @@ export function developerMailtoHref(subject = 'The Rabbit Hole feedback') {
   return `mailto:${DEVELOPER_EMAIL}?subject=${encodeURIComponent(subject)}`;
 }
 
-export default function ContactDeveloperButton({ className = '', compact = false }) {
+export default function ContactDeveloperButton({ className = '', compact = false, onActivate }) {
   return (
     <a
       href={developerMailtoHref()}
+      onClick={() => onActivate?.()}
       title={compact ? 'Contact developer' : undefined}
       className={`inline-flex items-center gap-1.5 rounded-xl text-sm font-medium transition-all
         text-white/50 hover:text-white/85 hover:bg-white/10 border border-white/10 hover:border-white/20
