@@ -214,7 +214,15 @@ function isRetryableJsonCompletionError(msg) {
  * @param {string} routeLabel
  * @param {{ retryIfFasterThanMs?: number }} [options] Skip the second call when the first one already used most of the proxy budget — a retry there becomes a 502.
  */
-async function jsonChatWithRetry(makeCompletion, routeLabel, { retryIfFasterThanMs = 20000 } = {}) {
+async function jsonChatWithRetry(
+  makeCompletion,
+  routeLabel,
+  { retryIfFasterThanMs = 20000, parseResponse } = {},
+) {
+  const parse =
+    typeof parseResponse === 'function'
+      ? parseResponse
+      : (response) => parseDeepseekAssistantJson(response, routeLabel);
   let lastErr;
   const started = Date.now();
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -224,7 +232,7 @@ async function jsonChatWithRetry(makeCompletion, routeLabel, { retryIfFasterThan
     }
     const response = await makeCompletion(attempt);
     try {
-      return parseDeepseekAssistantJson(response, routeLabel);
+      return parse(response);
     } catch (err) {
       lastErr = err;
       const msg = err instanceof Error ? err.message : String(err);
@@ -236,13 +244,10 @@ async function jsonChatWithRetry(makeCompletion, routeLabel, { retryIfFasterThan
 }
 
 /**
- * Extract assistant text from a non-stream DeepSeek/OpenAI-compatible chat completion,
- * then parse JSON. Gives actionable errors instead of `(reading 'choices')`.
- *
  * @param {unknown} response
- * @param {string} [routeLabel] e.g. "explain", for structured logs/errors
+ * @param {string} [routeLabel]
  */
-export function parseDeepseekAssistantJson(response, routeLabel = 'deepseek') {
+function getCompletionAssistantText(response, routeLabel = 'deepseek') {
   const prefix = `[${routeLabel}] `;
 
   if (response == null || typeof response !== 'object' || Array.isArray(response)) {
@@ -282,7 +287,36 @@ export function parseDeepseekAssistantJson(response, routeLabel = 'deepseek') {
     );
   }
 
+  return text;
+}
+
+/**
+ * Extract assistant text from a non-stream DeepSeek/OpenAI-compatible chat completion,
+ * then parse JSON. Gives actionable errors instead of `(reading 'choices')`.
+ *
+ * @param {unknown} response
+ * @param {string} [routeLabel] e.g. "explain", for structured logs/errors
+ */
+export function parseDeepseekAssistantJson(response, routeLabel = 'deepseek') {
+  const text = getCompletionAssistantText(response, routeLabel);
   return parseModelJsonText(text, routeLabel);
+}
+
+/** Follow-up: strict JSON preferred; accept plain prose when the model skips json_object. */
+function parseFollowUpAssistantPayload(response) {
+  const text = getCompletionAssistantText(response, 'followup');
+  try {
+    return parseModelJsonText(text, 'followup');
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/not valid JSON/.test(msg)) throw err;
+    const trimmed = text.trim();
+    if (trimmed.length > 0 && !trimmed.startsWith('{')) {
+      console.warn('[followup] plain-text reply (JSON mode missed); using as answer');
+      return { reply: trimmed, offTopic: false };
+    }
+    throw err;
+  }
 }
 
 const geminiClient = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -1164,6 +1198,7 @@ If the user's latest question is clearly unrelated to BOTH the main session topi
 If on-topic or reasonably connected, set "offTopic" to false and answer helpfully.
 
 Return ONLY a JSON object: { "reply": string, "offTopic": boolean }` +
+      JSON_OUTPUT_RULES +
       (includeGrounding ? sourceGroundingSuffix(groundingContext) : '')
     );
   };
@@ -1184,18 +1219,18 @@ Return ONLY a JSON object: { "reply": string, "offTopic": boolean }` +
           content: m.content,
         })),
       ];
-      const params = {
-        messages: apiMessages,
-        temperature: 0.55,
-        max_tokens: attempt === 0 ? 3072 : 4096,
-      };
-      if (attempt === 0) {
-        params.response_format = { type: 'json_object' };
-      }
-      return deepseekV4FlashChat(params, { thinking: false });
+      return deepseekV4FlashChat(
+        {
+          messages: apiMessages,
+          response_format: { type: 'json_object' },
+          temperature: 0.55,
+          max_tokens: attempt === 0 ? 3072 : 4096,
+        },
+        { thinking: false },
+      );
     },
     'followup',
-    { retryIfFasterThanMs: 28000 },
+    { retryIfFasterThanMs: 28000, parseResponse: parseFollowUpAssistantPayload },
   );
   throwIfSafetyPayload(data);
   const reply = typeof data.reply === 'string' ? data.reply.trim() : '';
