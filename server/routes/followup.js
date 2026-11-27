@@ -1,6 +1,7 @@
 import { followUpChat } from '../services/deepseek.js';
 import { detectProhibitedUserInput } from '../lib/inputSafety.js';
 import { sendContentSafetyResponse, sendRouteError } from '../lib/contentSafety.js';
+import { logFollowUpDebug } from '../lib/followUpDebugLog.js';
 
 const MAX_FOLLOWUP_MESSAGES = 20;
 
@@ -62,6 +63,12 @@ export async function followupPostHandler(req, res) {
     return sendContentSafetyResponse(res, followUpLog);
   }
 
+  logFollowUpDebug('POST /api/followup', {
+    branchNodeLabel: branchNodeLabel.trim(),
+    validMessageCount: validMessages.length,
+    roles: validMessages.map((m) => m.role),
+  });
+
   try {
     const result = await followUpChat({
       branchNodeLabel: branchNodeLabel.trim(),
@@ -73,6 +80,8 @@ export async function followupPostHandler(req, res) {
     });
     res.json(result);
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[followup] handler error:', msg);
     sendRouteError(res, err, 'followup', 'Follow-up failed', followUpLog);
   }
 }

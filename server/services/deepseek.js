@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { isExploreDebug } from '../lib/exploreDebugLog.js';
+import { isFollowUpDebug, logFollowUpDebug } from '../lib/followUpDebugLog.js';
 import {
   ContentSafetyError,
   isLikelyGeminiSafetyBlock,
@@ -217,7 +218,7 @@ function isRetryableJsonCompletionError(msg) {
 async function jsonChatWithRetry(
   makeCompletion,
   routeLabel,
-  { retryIfFasterThanMs = 20000, parseResponse } = {},
+  { retryIfFasterThanMs = 20000, parseResponse, maxAttempts = 2 } = {},
 ) {
   const parse =
     typeof parseResponse === 'function'
@@ -225,7 +226,8 @@ async function jsonChatWithRetry(
       : (response) => parseDeepseekAssistantJson(response, routeLabel);
   let lastErr;
   const started = Date.now();
-  for (let attempt = 0; attempt < 2; attempt++) {
+  const attempts = Math.max(1, Math.min(maxAttempts, 4));
+  for (let attempt = 0; attempt < attempts; attempt++) {
     if (attempt > 0 && Date.now() - started > retryIfFasterThanMs) {
       console.warn(`[${routeLabel}] skipping retry after ${Date.now() - started}ms`);
       throw lastErr;
@@ -236,7 +238,7 @@ async function jsonChatWithRetry(
     } catch (err) {
       lastErr = err;
       const msg = err instanceof Error ? err.message : String(err);
-      if (attempt === 1 || !isRetryableJsonCompletionError(msg)) throw err;
+      if (attempt === attempts - 1 || !isRetryableJsonCompletionError(msg)) throw err;
       console.warn(`[${routeLabel}] ${msg} — retrying once`);
     }
   }
@@ -303,12 +305,34 @@ export function parseDeepseekAssistantJson(response, routeLabel = 'deepseek') {
 }
 
 /** Follow-up: strict JSON preferred; accept plain prose when the model skips json_object. */
-function parseFollowUpAssistantPayload(response) {
+function parseFollowUpAssistantPayload(response, attempt = 0) {
+  const finishReason =
+    response && typeof response === 'object' && !Array.isArray(response)
+      ? /** @type {{ choices?: { finish_reason?: string }[] }} */ (response).choices?.[0]?.finish_reason
+      : undefined;
+  const rawContent =
+    response && typeof response === 'object' && !Array.isArray(response)
+      ? /** @type {{ choices?: { message?: { content?: unknown } }[] }} */ (response).choices?.[0]?.message
+          ?.content
+      : undefined;
+  if (rawContent != null && typeof rawContent === 'string' && rawContent.length > 0 && rawContent.trim() === '') {
+    logFollowUpDebug(`attempt=${attempt} json mode replaced output with whitespace`, {
+      rawLen: rawContent.length,
+      finishReason: finishReason ?? 'n/a',
+    });
+  }
   const text = getCompletionAssistantText(response, 'followup');
+  logFollowUpDebug(`attempt=${attempt} finish_reason=${finishReason ?? 'n/a'} raw assistant text`, text);
   try {
-    return parseModelJsonText(text, 'followup');
+    const parsed = parseModelJsonText(text, 'followup');
+    logFollowUpDebug(`attempt=${attempt} parsed JSON`, parsed);
+    return parsed;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[followup] parse failed (attempt=${attempt}): ${msg}`);
+    if (isFollowUpDebug()) {
+      console.warn('[followup][debug] unparsed body:', text);
+    }
     if (!/not valid JSON/.test(msg)) throw err;
     const trimmed = text.trim();
     if (trimmed.length > 0 && !trimmed.startsWith('{')) {
@@ -1179,8 +1203,15 @@ export async function followUpChat({
   groundingContext = '',
   messages = [],
 }) {
+  const FOLLOWUP_JSON_EXAMPLE =
+    '{"reply":"The Nile is the longest river in Africa.","offTopic":false}';
+
   const buildSystemPrompt = (attempt) => {
     const includeGrounding = attempt === 0;
+    const retryJson =
+      attempt > 0
+        ? '\n\nCRITICAL: Output one minified json object only — keys "reply" and "offTopic". No markdown fences, no text before or after the object.'
+        : '';
     return (
       SAFETY_GUARDRAIL_BRIEF +
       `You help a learner with follow-up questions during an exploration session.
@@ -1197,21 +1228,37 @@ If the user's latest question is clearly unrelated to BOTH the main session topi
 
 If on-topic or reasonably connected, set "offTopic" to false and answer helpfully.
 
-Return ONLY a JSON object: { "reply": string, "offTopic": boolean }` +
+Respond in json only. Schema: { "reply": string, "offTopic": boolean }
+Example json object (match this shape exactly): ${FOLLOWUP_JSON_EXAMPLE}` +
       JSON_OUTPUT_RULES +
+      retryJson +
       (includeGrounding ? sourceGroundingSuffix(groundingContext) : '')
     );
   };
 
   const historyForAttempt = (attempt) => {
     if (attempt === 0) return messages;
-    return messages.length > 8 ? messages.slice(-8) : messages;
+    if (attempt === 1) return messages.length > 8 ? messages.slice(-8) : messages;
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user');
+    return lastUser ? [lastUser] : messages.slice(-2);
   };
 
+  logFollowUpDebug('request', {
+    branchNodeLabel,
+    messageCount: messages.length,
+    lastUserPreview: messages.filter((m) => m.role === 'user').slice(-1)[0]?.content?.slice(0, 120),
+  });
+
+  let parseAttempt = 0;
   // Thinking + json_object + huge system prompt often yields empty content on multi-turn threads — slim retry.
   const data = await jsonChatWithRetry(
     (attempt) => {
+      parseAttempt = attempt;
       const history = historyForAttempt(attempt);
+      logFollowUpDebug(`upstream attempt=${attempt}`, {
+        historyMessages: history.length,
+        systemChars: buildSystemPrompt(attempt).length,
+      });
       const apiMessages = [
         { role: 'system', content: buildSystemPrompt(attempt) },
         ...history.map((m) => ({
@@ -1219,18 +1266,21 @@ Return ONLY a JSON object: { "reply": string, "offTopic": boolean }` +
           content: m.content,
         })),
       ];
-      return deepseekV4FlashChat(
-        {
-          messages: apiMessages,
-          response_format: { type: 'json_object' },
-          temperature: 0.55,
-          max_tokens: attempt === 0 ? 3072 : 4096,
-        },
-        { thinking: false },
-      );
+      const chatParams = {
+        messages: apiMessages,
+        temperature: 0.55,
+        max_tokens: attempt === 0 ? 3072 : 4096,
+      };
+      // DeepSeek JSON mode needs "json" + example in the prompt; on failure use plain text + parser fallback.
+      if (attempt === 0) chatParams.response_format = { type: 'json_object' };
+      return deepseekV4FlashChat(chatParams, { thinking: false });
     },
     'followup',
-    { retryIfFasterThanMs: 28000, parseResponse: parseFollowUpAssistantPayload },
+    {
+      retryIfFasterThanMs: 28000,
+      maxAttempts: 3,
+      parseResponse: (response) => parseFollowUpAssistantPayload(response, parseAttempt),
+    },
   );
   throwIfSafetyPayload(data);
   const reply = typeof data.reply === 'string' ? data.reply.trim() : '';
@@ -1238,6 +1288,11 @@ Return ONLY a JSON object: { "reply": string, "offTopic": boolean }` +
   if (!reply) {
     throw new Error('[followup] model returned empty reply');
   }
+  logFollowUpDebug('success', {
+    offTopic,
+    replyChars: reply.length,
+    replyPreview: reply.slice(0, 200),
+  });
   return { reply, offTopic };
 }
 
