@@ -11,6 +11,7 @@ import {
 /** Wall clock for explore POST (after Turnstile session is ready). */
 const EXPLORE_FETCH_TIMEOUT_MS = 120_000;
 import { apiErrorFromPayload } from '../lib/apiErrors.js';
+import { collectFollowUpMessages, getFollowUpChainLeafId } from '../lib/followUpGraph.js';
 
 export const ROOT_LEVEL_EXPANDING_ID = '__root_level__';
 
@@ -570,6 +571,14 @@ export function useGraph() {
     return parentLabelOfRef.current.get(nodeId) || rootLabelRef.current || '';
   }, []);
 
+  const getFollowUpThreadMessages = useCallback((branchAnchorId) => {
+    return collectFollowUpMessages(nodesRef.current, linksRef.current, branchAnchorId);
+  }, []);
+
+  const getFollowUpLeafId = useCallback((branchAnchorId) => {
+    return getFollowUpChainLeafId(nodesRef.current, linksRef.current, branchAnchorId);
+  }, []);
+
   return {
     graphData,
     expandedNodes,
@@ -593,6 +602,8 @@ export function useGraph() {
     snapshot,
     restore,
     addFollowUpNode,
+    getFollowUpThreadMessages,
+    getFollowUpLeafId,
     getParentLabelForNode,
     explanationCache: explanationCacheRef,
     comparisonSubjects,

@@ -74,3 +74,26 @@ export function collectFollowUpMessages(nodes, links, branchAnchorId) {
   }
   return messages;
 }
+
+/** Drop empty lines and fix consecutive same-role turns before sending to /api/followup. */
+export function normalizeFollowUpApiMessages(messages) {
+  const out = [];
+  for (const m of messages) {
+    if (!m || (m.role !== 'user' && m.role !== 'assistant')) continue;
+    const content = typeof m.content === 'string' ? m.content.trim() : '';
+    if (!content) continue;
+    if (out.length > 0 && out[out.length - 1].role === m.role) {
+      out[out.length - 1] = { role: m.role, content };
+    } else {
+      out.push({ role: m.role, content });
+    }
+  }
+  return out;
+}
+
+const MAX_FOLLOWUP_API_MESSAGES = 20;
+
+export function capFollowUpApiMessages(messages) {
+  if (messages.length <= MAX_FOLLOWUP_API_MESSAGES) return messages;
+  return messages.slice(-MAX_FOLLOWUP_API_MESSAGES);
+}

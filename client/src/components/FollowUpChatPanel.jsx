@@ -4,8 +4,10 @@ import {
   getParentLabelForNode,
   getFollowUpChainLeafId,
   collectFollowUpMessages,
+  normalizeFollowUpApiMessages,
+  capFollowUpApiMessages,
 } from '../lib/followUpGraph.js';
-import { withTurnstilePayload, fetchWithTurnstile } from '../lib/turnstile.js';
+import { withTurnstilePayload, fetchWithTurnstile, readApiJson } from '../lib/turnstile.js';
 import { apiErrorFromPayload, errorKindFromPayload } from '../lib/apiErrors.js';
 import RequestNotice from './RequestNotice.jsx';
 
@@ -17,6 +19,8 @@ export default function FollowUpChatPanel({
   groundingContext,
   onClose,
   addFollowUpNode,
+  getFollowUpThreadMessages,
+  getFollowUpLeafId,
   onStartNewExploration,
   onPersist,
 }) {
@@ -51,8 +55,15 @@ export default function FollowUpChatPanel({
       setErrorTitle(null);
       setOffTopicNote(null);
 
-      const prior = collectFollowUpMessages(nodes, links, branchAnchorId);
-      const apiMessages = [...prior, { role: 'user', content: q }];
+      const prior = getFollowUpThreadMessages
+        ? getFollowUpThreadMessages(branchAnchorId)
+        : collectFollowUpMessages(nodes, links, branchAnchorId);
+      const apiMessages = capFollowUpApiMessages(
+        normalizeFollowUpApiMessages([...prior, { role: 'user', content: q }]),
+      );
+      if (!apiMessages.length || apiMessages[apiMessages.length - 1].role !== 'user') {
+        throw new Error('Could not build follow-up message history — try again.');
+      }
 
       try {
         const body = await withTurnstilePayload({
@@ -68,13 +79,20 @@ export default function FollowUpChatPanel({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-        const data = await res.json();
+        const data = await readApiJson(res);
         if (!res.ok || data.error) throw apiErrorFromPayload(data, 'Request failed');
 
-        const leafId = getFollowUpChainLeafId(nodes, links, branchAnchorId);
+        const replyText = typeof data.reply === 'string' ? data.reply.trim() : '';
+        if (!replyText) {
+          throw new Error('No answer returned — try again.');
+        }
+
+        const leafId = getFollowUpLeafId
+          ? getFollowUpLeafId(branchAnchorId)
+          : getFollowUpChainLeafId(nodes, links, branchAnchorId);
         addFollowUpNode(leafId, {
           fullQuestion: q,
-          answer: data.reply || '',
+          answer: replyText,
           followUpAnchorId: branchAnchorId,
           followUpAnchorLabel: anchorLabel,
         });
@@ -105,6 +123,8 @@ export default function FollowUpChatPanel({
       sessionTopic,
       groundingContext,
       addFollowUpNode,
+      getFollowUpThreadMessages,
+      getFollowUpLeafId,
       onPersist,
     ],
   );

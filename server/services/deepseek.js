@@ -1145,9 +1145,11 @@ export async function followUpChat({
   groundingContext = '',
   messages = [],
 }) {
-  const systemPrompt =
-    SAFETY_GUARDRAIL +
-    `You help a learner with follow-up questions during an exploration session.
+  const buildSystemPrompt = (attempt) => {
+    const includeGrounding = attempt === 0;
+    return (
+      SAFETY_GUARDRAIL_BRIEF +
+      `You help a learner with follow-up questions during an exploration session.
 
 SESSION CONTEXT:
 - Main topic / session: ${sessionTopic || rootTopic || '(general)'}
@@ -1155,47 +1157,52 @@ SESSION CONTEXT:
 - Parent context for that subtopic: "${anchorParentContext || branchNodeLabel}"
 
 The user message(s) below are a continuing chat about that subtopic within this session.
-Answer in plain, direct language (no JSON inside "reply", no required structure). You may use short paragraphs or bullets when helpful.
-Prefer simple words. Avoid extended metaphors and "it's like..." stories unless the user explicitly asks for an analogy.
+Answer in plain, direct language inside "reply" (no markdown code fences). Short paragraphs or bullets are fine.
 
-If the user's latest question is clearly unrelated to BOTH the main session topic AND the branch subtopic (e.g. random unrelated subject), set "offTopic" to true. In that case "reply" should briefly acknowledge that and suggest they can start a fresh exploration for the new subject — still stay within safety rules.
+If the user's latest question is clearly unrelated to BOTH the main session topic AND the branch subtopic, set "offTopic" to true and "reply" should briefly say so and suggest a fresh exploration.
 
-If the question is on-topic or reasonably connected, set "offTopic" to false and answer helpfully.
+If on-topic or reasonably connected, set "offTopic" to false and answer helpfully.
 
 Return ONLY a JSON object: { "reply": string, "offTopic": boolean }` +
-    sourceGroundingSuffix(groundingContext);
-
-  const apiMessages = [
-    { role: 'system', content: systemPrompt },
-    ...messages.map((m) => ({
-      role: m.role === 'assistant' ? 'assistant' : 'user',
-      content: m.content,
-    })),
-  ];
-
-  // Thinking + json_object is a known DeepSeek footgun (empty content). Follow-up is plain Q&A — skip thinking.
-  const chatParams = {
-    messages: apiMessages,
-    response_format: { type: 'json_object' },
-    temperature: 0.55,
-    max_tokens: 2048,
+      (includeGrounding ? sourceGroundingSuffix(groundingContext) : '')
+    );
   };
 
-  let response = await deepseekV4FlashChat(chatParams, { thinking: false });
+  const historyForAttempt = (attempt) => {
+    if (attempt === 0) return messages;
+    return messages.length > 8 ? messages.slice(-8) : messages;
+  };
 
-  let data;
-  try {
-    data = parseDeepseekAssistantJson(response, 'followup');
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (!/empty assistant content/.test(msg)) throw err;
-    console.warn('[followup] empty assistant content — retrying once');
-    response = await deepseekV4FlashChat(chatParams, { thinking: false });
-    data = parseDeepseekAssistantJson(response, 'followup');
-  }
+  // Thinking + json_object + huge system prompt often yields empty content on multi-turn threads — slim retry.
+  const data = await jsonChatWithRetry(
+    (attempt) => {
+      const history = historyForAttempt(attempt);
+      const apiMessages = [
+        { role: 'system', content: buildSystemPrompt(attempt) },
+        ...history.map((m) => ({
+          role: m.role === 'assistant' ? 'assistant' : 'user',
+          content: m.content,
+        })),
+      ];
+      const params = {
+        messages: apiMessages,
+        temperature: 0.55,
+        max_tokens: attempt === 0 ? 3072 : 4096,
+      };
+      if (attempt === 0) {
+        params.response_format = { type: 'json_object' };
+      }
+      return deepseekV4FlashChat(params, { thinking: false });
+    },
+    'followup',
+    { retryIfFasterThanMs: 28000 },
+  );
   throwIfSafetyPayload(data);
-  const reply = typeof data.reply === 'string' ? data.reply : '';
+  const reply = typeof data.reply === 'string' ? data.reply.trim() : '';
   const offTopic = Boolean(data.offTopic);
+  if (!reply) {
+    throw new Error('[followup] model returned empty reply');
+  }
   return { reply, offTopic };
 }
 

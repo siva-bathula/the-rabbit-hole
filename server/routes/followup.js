@@ -2,6 +2,25 @@ import { followUpChat } from '../services/deepseek.js';
 import { detectProhibitedUserInput } from '../lib/inputSafety.js';
 import { sendContentSafetyResponse, sendRouteError } from '../lib/contentSafety.js';
 
+const MAX_FOLLOWUP_MESSAGES = 20;
+
+function normalizeFollowUpMessages(messages) {
+  const out = [];
+  for (const m of messages) {
+    if (!m || (m.role !== 'user' && m.role !== 'assistant')) continue;
+    const content = typeof m.content === 'string' ? m.content.trim() : '';
+    if (!content) continue;
+    if (out.length > 0 && out[out.length - 1].role === m.role) {
+      out[out.length - 1] = { role: m.role, content };
+    } else {
+      out.push({ role: m.role, content });
+    }
+  }
+  return out.length > MAX_FOLLOWUP_MESSAGES
+    ? out.slice(-MAX_FOLLOWUP_MESSAGES)
+    : out;
+}
+
 /** POST /api/followup — mounted directly from index.js (avoids sub-router 404 if process is stale). */
 export async function followupPostHandler(req, res) {
   const {
@@ -20,15 +39,15 @@ export async function followupPostHandler(req, res) {
     return res.status(400).json({ error: 'messages array is required' });
   }
 
-  const validMessages = messages.filter(
-    (m) =>
-      m &&
-      (m.role === 'user' || m.role === 'assistant') &&
-      typeof m.content === 'string',
-  );
+  const validMessages = normalizeFollowUpMessages(messages);
   if (validMessages.length === 0) {
     return res.status(400).json({
-      error: 'messages must contain at least one valid user or assistant entry',
+      error: 'messages must contain at least one non-empty user or assistant entry',
+    });
+  }
+  if (validMessages[validMessages.length - 1].role !== 'user') {
+    return res.status(400).json({
+      error: 'The latest message in the thread must be from the user',
     });
   }
 

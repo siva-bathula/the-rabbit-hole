@@ -274,6 +274,8 @@ export default function App() {
     restore,
     explanationCache,
     addFollowUpNode,
+    getFollowUpThreadMessages,
+    getFollowUpLeafId,
     comparisonSubjects,
     comparisonAlignment,
   } = useGraph();
@@ -1584,6 +1586,8 @@ export default function App() {
           groundingContext={groundingContext}
           onClose={() => setFollowUpNode(null)}
           addFollowUpNode={addFollowUpNode}
+          getFollowUpThreadMessages={getFollowUpThreadMessages}
+          getFollowUpLeafId={getFollowUpLeafId}
           onStartNewExploration={handleNewExplorationFromFollowUp}
           onPersist={persistLive}
         />
