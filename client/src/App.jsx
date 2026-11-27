@@ -410,14 +410,14 @@ export default function App() {
       const step = total > 0 ? Math.min(done + 1, total) : 0;
       const msg = label
         ? `Fetching “${label}” (${step}/${total})…`
-        : `Fetching sibling explanations (${done}/${total})…`;
+        : `Explaining map siblings (${done}/${total})…`;
       showActionStatus(msg, { persist: true });
       return;
     }
     if (wasPullingLevelRef.current) {
       wasPullingLevelRef.current = false;
       showActionStatus(
-        pullLevelError ? 'Level fetch failed — try again' : 'Finished fetching this level',
+        pullLevelError ? 'Sibling explanations failed — try again' : 'Finished explaining siblings',
       );
     }
   }, [isPullingLevel, pullProgress, pullLevelError, showActionStatus]);
@@ -734,11 +734,11 @@ export default function App() {
   const handlePullLevelClick = useCallback(() => {
     if (isPullingLevel) {
       cancelPull();
-      showActionStatus('Cancelled level fetch');
+      showActionStatus('Cancelled sibling explanations');
       return;
     }
     clearPullLevelError();
-    showActionStatus('Fetching explanations for this level…', { persist: true });
+    showActionStatus('Explaining sibling topics on the map…', { persist: true });
     pullLevel();
   }, [isPullingLevel, cancelPull, clearPullLevelError, pullLevel, showActionStatus]);
 
@@ -748,19 +748,19 @@ export default function App() {
       if (label) {
         return `Fetching “${label}” (${Math.min(done + 1, total)}/${total}) — click to cancel`;
       }
-      return `Pulling this level (${done}/${total}) — click to cancel`;
+      return `Explaining siblings (${done}/${total}) — click to cancel`;
     }
     if (pullLevelError) return pullLevelError;
     if (mode === 'fast' && !pullAnchorNode) {
-      return 'Select a node to pull explanations for its siblings';
+      return 'Select a node to explain its sibling topics on the map';
     }
     if (!pullAnchorNode) {
-      return 'Open a topic card to pull this level';
+      return 'Open a topic card to explain siblings at this level';
     }
     if (!canPullLevel) {
       return 'Every sibling at this level already has an explanation for the current mode (or this node has no siblings)';
     }
-    return `Fetch explanations for ${pullPendingCount} sibling node(s) at this level (${explainMode} mode)`;
+    return `Explain ${pullPendingCount} sibling topic(s) at this level (${explainMode} mode)`;
   }, [
     isPullingLevel,
     pullProgress,
@@ -959,7 +959,7 @@ export default function App() {
   const handleAddRootLevel = useCallback(() => {
     if (expandingNodeId || isAddingRootLevel) return;
     if (!showAddRootLevelButton) {
-      showActionStatus('Use Go Deeper on nodes before adding more top-level topics');
+      showActionStatus('Add subtopics on nodes before adding more top-level map topics');
       return;
     }
     showActionStatus('Adding topics to the map…', { persist: true });

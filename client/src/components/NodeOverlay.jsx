@@ -4,6 +4,7 @@ import { withTurnstilePayload, fetchWithTurnstile, readApiJson } from '../lib/tu
 import { errorKindFromPayload } from '../lib/apiErrors.js';
 import ExplainDepthControls from './ExplainDepthControls.jsx';
 import RequestNotice from './RequestNotice.jsx';
+import { exploreActionLabels as L } from '../lib/exploreActionLabels.js';
 
 function modeCacheKey(nodeId, mode) {
   return mode === 'normal' ? nodeId : `${nodeId}::${mode}`;
@@ -332,7 +333,7 @@ export default function NodeOverlay({
               >
                 <div className="w-4 h-4 rounded-full border-2 border-purple-400/30 border-t-purple-400 animate-spin flex-shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-purple-300 text-sm font-medium">Going deeper…</p>
+                  <p className="text-purple-300 text-sm font-medium">{L.addSubtopicsProgress}</p>
                   <p className="text-purple-300/50 text-xs mt-0.5">Fetching subtopics for <span className="text-purple-300/80">{node.label}</span></p>
                 </div>
                 {/* Animated progress bar */}
@@ -564,27 +565,30 @@ export default function NodeOverlay({
                     </div>
                   )}
 
-                  {/* Pull the Thread — deeper content */}
+                  {/* Longer write-up — same node, no map change */}
                   {!deeperContent && (
                     <div className="pt-2">
                       <button
+                        type="button"
                         onClick={handlePullThread}
                         disabled={isPulling}
-                        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl
+                        title={L.readMoreHint}
+                        aria-label={L.readMore}
+                        className="w-full flex flex-col items-center justify-center gap-0.5 py-2.5 px-4 rounded-xl
                           text-sm font-medium transition-all border
                           bg-white/3 border-white/8 text-white/40
                           hover:bg-purple-500/10 hover:border-purple-500/25 hover:text-white/70
                           disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         {isPulling ? (
-                          <>
+                          <span className="flex items-center gap-2">
                             <div className="w-3.5 h-3.5 rounded-full border-2 border-white/20 border-t-purple-400 animate-spin" />
-                            Unravelling…
-                          </>
+                            {L.readMoreProgress}
+                          </span>
                         ) : (
                           <>
-                            <span>🧵</span>
-                            Pull the Thread
+                            <span>{L.readMore}</span>
+                            <span className="text-[10px] font-normal text-white/30">Same topic · no new map nodes</span>
                           </>
                         )}
                       </button>
@@ -602,9 +606,8 @@ export default function NodeOverlay({
                   {deeperContent && (
                     <div className="space-y-5 pt-2 border-t border-white/8">
                       <div className="flex items-center gap-2 pt-1">
-                        <span className="text-sm">🧵</span>
                         <h3 className="text-xs font-semibold uppercase tracking-widest text-purple-400">
-                          Going Deeper
+                          {L.extraDetailHeading}
                         </h3>
                       </div>
 
@@ -715,24 +718,30 @@ export default function NodeOverlay({
                 </button>
               ) : (
                 <button
+                  type="button"
                   onClick={handleExpand}
                   disabled={isExpanding}
-                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-semibold text-sm transition-all
+                  title={L.addSubtopicsHint}
+                  aria-label={L.addSubtopics}
+                  className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 px-4 rounded-xl font-semibold text-sm transition-all
                     bg-purple-600 hover:bg-purple-500 active:scale-95 text-white
                     disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100"
                 >
                   {isExpanding ? (
-                    <>
+                    <span className="flex items-center gap-2">
                       <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                      Going deeper…
-                    </>
+                      {L.addSubtopicsProgress}
+                    </span>
                   ) : (
                     <>
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                          d="M19 9l-7 7-7-7" />
-                      </svg>
-                      Go Deeper
+                      <span className="flex items-center gap-2">
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                            d="M19 9l-7 7-7-7" />
+                        </svg>
+                        {L.addSubtopics}
+                      </span>
+                      <span className="text-[10px] font-normal text-white/75">New nodes on the map</span>
                     </>
                   )}
                 </button>

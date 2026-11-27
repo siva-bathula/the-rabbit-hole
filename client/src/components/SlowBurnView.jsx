@@ -6,6 +6,7 @@ import { withTurnstilePayload, fetchWithTurnstile, readApiJson } from '../lib/tu
 import { errorKindFromPayload } from '../lib/apiErrors.js';
 import ExplainDepthControls from './ExplainDepthControls.jsx';
 import RequestNotice from './RequestNotice.jsx';
+import { exploreActionLabels as L } from '../lib/exploreActionLabels.js';
 
 function modeCacheKey(nodeId, mode) {
   return mode === 'normal' ? nodeId : `${nodeId}::${mode}`;
@@ -371,27 +372,29 @@ function ContentArea({ node, parentContext, rootLabel, sessionTopic, groundingCo
             </div>
           )}
 
-          {/* Pull the Thread — deeper content */}
           {!deeperContent && (
             <div className="pt-2">
               <button
+                type="button"
                 onClick={handlePullThread}
                 disabled={isPulling}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl
+                title={L.readMoreHint}
+                aria-label={L.readMore}
+                className="w-full flex flex-col items-center justify-center gap-0.5 py-2.5 px-4 rounded-xl
                   text-sm font-medium transition-all border
                   bg-white/3 border-white/8 text-white/40
                   hover:bg-purple-500/10 hover:border-purple-500/25 hover:text-white/70
                   disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {isPulling ? (
-                  <>
+                  <span className="flex items-center gap-2">
                     <div className="w-3.5 h-3.5 rounded-full border-2 border-white/20 border-t-purple-400 animate-spin" />
-                    Unravelling…
-                  </>
+                    {L.readMoreProgress}
+                  </span>
                 ) : (
                   <>
-                    <span>🧵</span>
-                    Pull the Thread
+                    <span>{L.readMore}</span>
+                    <span className="text-[10px] font-normal text-white/30">Same topic · no new map nodes</span>
                   </>
                 )}
               </button>
@@ -411,7 +414,7 @@ function ContentArea({ node, parentContext, rootLabel, sessionTopic, groundingCo
               <div className="flex items-center gap-2">
                 <span className="text-sm">🧵</span>
                 <h3 className="text-xs font-semibold uppercase tracking-widest text-purple-400">
-                  Going Deeper
+                  {L.extraDetailHeading}
                 </h3>
               </div>
 
@@ -747,8 +750,11 @@ export default function SlowBurnView({
             {/* Go deeper (node not yet expanded) */}
             {canGoDeeper && (
               <button
+                type="button"
                 onClick={() => goDeeper(currentNode)}
                 disabled={isExpanding}
+                title={L.addSubtopicsHint}
+                aria-label={L.addSubtopics}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all
                   bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20
                   text-white/70 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed"
@@ -756,14 +762,14 @@ export default function SlowBurnView({
                 {isExpanding ? (
                   <>
                     <div className="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                    Going deeper…
+                    {L.addSubtopicsProgress}
                   </>
                 ) : (
                   <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden>
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
-                    Go Deeper
+                    {L.addSubtopics}
                   </>
                 )}
               </button>

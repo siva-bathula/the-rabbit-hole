@@ -193,7 +193,7 @@ function renderIndexTree(tree) {
 
       const sub = [];
       if (hasDeeper) {
-        sub.push(`<li class="index-sub"><a href="#deeper-${escapeHtml(nodeId)}">Pull the thread</a></li>`);
+        sub.push(`<li class="index-sub"><a href="#deeper-${escapeHtml(nodeId)}">Extra detail</a></li>`);
       }
       followUps.forEach((fu, i) => {
         sub.push(
@@ -273,7 +273,7 @@ function renderExplanationSection(payload, depth) {
 
   if (deeper) {
     parts.push(`<div class="deeper-block" id="deeper-${escapeHtml(nodeId)}">`);
-    parts.push('<h3>Pull the thread</h3>');
+    parts.push('<h3>Extra detail</h3>');
     if (deeper.advancedInsights?.length) {
       parts.push('<ul>');
       for (const insight of deeper.advancedInsights) {
